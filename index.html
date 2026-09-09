@@ -249,15 +249,18 @@
 <main>
 
 <section class="tab-panel active" id="tab-monitor">
-  <div class="controls" style="margin-bottom:16px;">
-    <div class="station-tabs" id="stationTabs"></div>
-    <button id="playBtn" title="Play / pause">▶</button>
-    <div class="speed-group" id="speedGroup">
-      <button data-speed="1" class="active">1×</button>
-      <button data-speed="5">5×</button>
-      <button data-speed="20">20×</button>
+  <div class="controls" style="margin-bottom:16px; display: flex; justify-content: space-between; width: 100%;">
+    <div style="flex: 1;"></div>
+    <div class="station-tabs" id="stationTabs" style="display: flex; justify-content: center; flex: 1;"></div>
+    <div style="display: flex; gap: 10px; justify-content: flex-end; flex: 1; align-items: center;">
+      <button id="playBtn" title="Play / pause">▶</button>
+      <div class="speed-group" id="speedGroup">
+        <button data-speed="1" class="active">1×</button>
+        <button data-speed="5">5×</button>
+        <button data-speed="20">20×</button>
+      </div>
+      <button id="resetBtn" title="Restart">↺</button>
     </div>
-    <button id="resetBtn" title="Restart">↺</button>
   </div>
   <div class="progress-wrap">
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
