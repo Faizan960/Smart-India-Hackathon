@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AWS Anomaly Detection — Live Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --navy-dark: #0b1e2f;
+    --navy: #123c5e;
+    --sky: #2e86ab;
+    --sky-light: #7fb8d6;
+    --amber: #d9752f;
+    --amber-light: #f2b789;
+    --ink: #e9f1f6;
+    --muted: #8aa3b3;
+    --card: #132b3f;
+    --card-hover: #17334a;
+    --good: #2fa876;
+    --warn: #d9752f;
+    --bad: #d9483f;
+    --border: #1e3a4f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(circle at 15% 0%, #10314a 0%, var(--navy-dark) 55%);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Calibri, Arial, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(11, 30, 47, 0.85);
+    backdrop-filter: blur(6px);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--good);
+    box-shadow: 0 0 10px var(--good);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+  .brand h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: 0.2px; }
+  .brand p { margin: 0; font-size: 12px; color: var(--muted); }
+
+  .station-tabs { display: flex; gap: 8px; }
+  .station-tabs button {
+    background: var(--card); color: var(--muted); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 20px; font-size: 13px; cursor: pointer;
+    font-weight: 600; transition: all .15s;
+  }
+  .station-tabs button.active { background: var(--sky); color: white; border-color: var(--sky); }
+  .station-tabs button:hover:not(.active) { border-color: var(--sky); color: var(--ink); }
+
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .controls button {
+    background: var(--amber); color: white; border: none; width: 38px; height: 38px;
+    border-radius: 50%; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center;
+    transition: transform .1s;
+  }
+  .controls button:hover { transform: scale(1.08); }
+  .speed-group { display: flex; gap: 4px; background: var(--card); border-radius: 20px; padding: 3px; border: 1px solid var(--border); }
+  .speed-group button {
+    background: transparent; color: var(--muted); width: auto; height: 28px; padding: 0 10px;
+    border-radius: 16px; font-size: 12px; font-weight: 700;
+  }
+  .speed-group button.active { background: var(--sky); color: white; }
+  .speed-group button:hover { transform: none; }
+
+  main { padding: 22px 28px 60px; max-width: 1500px; margin: 0 auto; }
+
+  .top-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px;
+  }
+  .stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: var(--ink); }
+  .stat-card .value.amber { color: var(--amber-light); }
+  .stat-card .value.sky { color: var(--sky-light); }
+
+  .progress-wrap { margin-bottom: 20px; }
+  .progress-bar { height: 6px; background: var(--card); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--sky), var(--amber)); width: 0%; transition: width .15s linear; }
+  .progress-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .main-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 980px) { .main-grid { grid-template-columns: 1fr; } .top-grid { grid-template-columns: repeat(2,1fr);} }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px;
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; }
+  .chart-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
+  .chart-toggle button {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 5px 12px; border-radius: 14px; font-size: 11px; cursor: pointer; font-weight: 700;
+  }
+  .chart-toggle button.active { background: var(--sky); color: white; border-color: var(--sky); }
+  canvas#mainChart { max-height: 340px; }
+
+  .health-row { display: flex; align-items: center; gap: 18px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .health-ring { position: relative; width: 84px; height: 84px; flex-shrink: 0; }
+  .health-ring svg { transform: rotate(-90deg); }
+  .health-ring .pct {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700;
+  }
+  .health-text h3 { margin: 0 0 4px; font-size: 15px; }
+  .health-text p { margin: 0; font-size: 12px; color: var(--muted); }
+
+  .alert-feed { display: flex; flex-direction: column; gap: 10px; max-height: 560px; overflow-y: auto; padding-right: 4px; }
+  .alert-feed::-webkit-scrollbar { width: 6px; }
+  .alert-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .alert-card {
+    background: var(--navy); border-radius: 10px; padding: 12px 14px; border-left: 3px solid var(--sky);
+    animation: slideIn .3s ease;
+  }
+  .alert-card.high { border-left-color: var(--bad); }
+  .alert-card.medium { border-left-color: var(--warn); }
+  .alert-card.low { border-left-color: var(--muted); }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  .alert-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .alert-type { font-size: 13px; font-weight: 700; text-transform: capitalize; }
+  .alert-sev { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
+  .alert-sev.high { background: rgba(217,72,63,0.2); color: #ff8f87; }
+  .alert-sev.medium { background: rgba(217,117,47,0.2); color: var(--amber-light); }
+  .alert-sev.low { background: rgba(138,163,179,0.2); color: var(--muted); }
+  .alert-reason { font-size: 12px; color: var(--muted); line-height: 1.4; margin-bottom: 4px; }
+  .alert-meta { font-size: 10.5px; color: #5f7789; }
+  .empty-state { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 10px; }
+
+  .recall-mini { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .recall-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+  .recall-row .name { width: 84px; color: var(--muted); flex-shrink: 0; }
+  .recall-track { flex: 1; height: 6px; background: var(--navy); border-radius: 3px; overflow: hidden; }
+  .recall-fill { height: 100%; border-radius: 3px; }
+  .recall-pct { width: 32px; text-align: right; color: var(--ink); }
+
+  /* ---- top-level nav tabs ---- */
+  .nav-tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 4px; }
+  .nav-tabs button {
+    background: transparent; border: none; color: var(--muted); padding: 9px 18px; border-radius: 18px;
+    font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .nav-tabs button.active { background: linear-gradient(135deg, var(--sky), var(--navy)); color: white; box-shadow: 0 2px 10px rgba(46,134,171,0.4); }
+  .nav-tabs button:hover:not(.active) { color: var(--ink); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; animation: fadeIn .25s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0);} }
+
+  /* ---- generic content styling for explanation tabs ---- */
+  .section-intro { max-width: 760px; margin: 0 0 28px; }
+  .section-intro h2 { font-size: 26px; margin: 0 0 10px; }
+  .section-intro p { font-size: 14.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+
+  .flow-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 32px; }
+  .flow-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; flex: 1; min-width: 150px; text-align: center; position: relative;
+  }
+  .flow-box.highlight { background: linear-gradient(135deg, var(--amber), #b85a1f); border-color: var(--amber); }
+  .flow-box .step-num { font-size: 11px; color: var(--sky-light); font-weight: 700; letter-spacing: 1px; margin-bottom: 6px; }
+  .flow-box.highlight .step-num { color: #ffe0c2; }
+  .flow-box .step-title { font-size: 13.5px; font-weight: 700; }
+  .flow-arrow { color: var(--muted); font-size: 20px; flex-shrink: 0; }
+  @media (max-width: 900px) { .flow-arrow { display: none; } }
+
+  .card-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+  @media (max-width: 900px) { .card-grid-3 { grid-template-columns: 1fr; } }
+  .detector-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px;
+    border-top: 3px solid var(--sky);
+  }
+  .detector-card.mid { border-top-color: var(--amber); }
+  .detector-card .num {
+    width: 34px; height: 34px; border-radius: 50%; background: rgba(46,134,171,0.15); color: var(--sky-light);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px;
+  }
+  .detector-card.mid .num { background: rgba(217,117,47,0.18); color: var(--amber-light); }
+  .detector-card h3 { font-size: 16.5px; margin: 0 0 8px; }
+  .detector-card p { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 0 0 12px; }
+  .detector-card .catches {
+    font-size: 12px; color: var(--sky-light); font-style: italic; border-top: 1px solid var(--border); padding-top: 10px;
+  }
+  .detector-card.mid .catches { color: var(--amber-light); }
+
+  .stack-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 28px; }
+  @media (max-width: 900px) { .stack-grid { grid-template-columns: 1fr; } }
+  .stack-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .stack-card .stack-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .stack-card .tag {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--amber-light); background: rgba(217,117,47,0.15); padding: 3px 10px; border-radius: 10px;
+  }
+  .stack-card h3 { font-size: 15.5px; margin: 0; }
+  .stack-card ul { margin: 8px 0 12px; padding-left: 18px; }
+  .stack-card li { font-size: 12.5px; color: var(--muted); margin-bottom: 5px; line-height: 1.4; }
+  .stack-card .why { font-size: 12px; color: var(--sky-light); border-top: 1px solid var(--border); padding-top: 10px; }
+
+  .results-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .results-grid { grid-template-columns: 1fr; } }
+  .methodology-list { display: flex; flex-direction: column; gap: 14px; }
+  .method-step { display: flex; gap: 12px; }
+  .method-step .m-num {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: var(--sky-light);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+  .method-step p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .method-step strong { color: var(--ink); }
+  .limitation-box {
+    background: rgba(217,72,63,0.08); border: 1px solid rgba(217,72,63,0.3); border-radius: 12px;
+    padding: 16px 18px; margin-top: 18px;
+  }
+  .limitation-box .lb-title { font-size: 12.5px; font-weight: 700; color: #ff8f87; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .limitation-box p { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    <div>
+      <h1>AWS Anomaly Detection</h1>
+      <p>SIH26073 · Ministry of Earth Sciences</p>
+    </div>
+  </div>
+  <div class="nav-tabs" id="navTabs">
+    <button data-tab="monitor" class="active">Live Monitor</button>
+    <button data-tab="architecture">Architecture</button>
+    <button data-tab="stack">Tech Stack</button>
+    <button data-tab="results">Results</button>
+  </div>
+</header>
+
+<main>
+
+<section class="tab-panel active" id="tab-monitor">
+  <div class="controls" style="margin-bottom:16px;">
+    <div class="station-tabs" id="stationTabs"></div>
+    <button id="playBtn" title="Play / pause">▶</button>
+    <div class="speed-group" id="speedGroup">
+      <button data-speed="1" class="active">1×</button>
+      <button data-speed="5">5×</button>
+      <button data-speed="20">20×</button>
+    </div>
+    <button id="resetBtn" title="Restart">↺</button>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-labels">
+      <span id="progressTime">2026-01-01 00:00</span>
+      <span id="progressCount">0 / 0 readings</span>
+    </div>
+  </div>
+
+  <div class="top-grid">
+    <div class="stat-card">
+      <div class="label">Precision (benchmark)</div>
+      <div class="value sky" id="statPrecision">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Recall (benchmark)</div>
+      <div class="value sky" id="statRecall">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Alerts this session</div>
+      <div class="value amber" id="statAlerts">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">False alert rate</div>
+      <div class="value" id="statFalseAlert">–</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="panel">
+      <h2>Live sensor stream</h2>
+      <div class="chart-toggle" id="chartToggle">
+        <button data-metric="temp" class="active">Temperature</button>
+        <button data-metric="pres">Pressure</button>
+        <button data-metric="hum">Humidity</button>
+      </div>
+      <canvas id="mainChart"></canvas>
+
+      <div class="health-row">
+        <div class="health-ring">
+          <svg width="84" height="84">
+            <circle cx="42" cy="42" r="36" stroke="#1e3a4f" stroke-width="8" fill="none" />
+            <circle id="healthCircle" cx="42" cy="42" r="36" stroke="#2fa876" stroke-width="8" fill="none"
+              stroke-dasharray="226" stroke-dashoffset="0" stroke-linecap="round" />
+          </svg>
+          <div class="pct" id="healthPct">100%</div>
+        </div>
+        <div class="health-text">
+          <h3>Station health score</h3>
+          <p id="healthDesc">Rolling 4-hour trust score for this station. Falls as anomalies accumulate, recovers as readings normalize.</p>
+        </div>
+      </div>
+
+      <div class="recall-mini" id="recallMini"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Live alert feed</h2>
+      <div class="alert-feed" id="alertFeed">
+        <div class="empty-state">No anomalies yet — press play to start the replay.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-architecture">
+  <div class="section-intro">
+    <h2>How the pipeline works</h2>
+    <p>Five stages turn a raw sensor stream into a judge-readable alert. Each stage is a separate Python module, so the logic stays testable and explainable rather than being one opaque model.</p>
+  </div>
+
+  <div class="flow-row">
+    <div class="flow-box"><div class="step-num">01</div><div class="step-title">AWS sensor stream</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><div class="step-num">02</div><div class="step-title">Data quality gate</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box highlight"><div class="step-num">03</div><div class="step-title">Hybrid anomaly engine</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><div class="step-num">04</div><div class="step-title">Fusion + explanation</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><div class="step-num">05</div><div class="step-title">Health score + dashboard</div></div>
+  </div>
+
+  <div class="section-intro">
+    <h2 style="font-size:20px;">The hybrid detection engine — three independent lenses</h2>
+    <p>Each detector looks at the stream differently, so we can point at exactly which signal triggered an alert instead of handing back an opaque anomaly score.</p>
+  </div>
+
+  <div class="card-grid-3">
+    <div class="detector-card">
+      <div class="num">1</div>
+      <h3>Statistical detector</h3>
+      <p>Rolling z-score against a 2-hour trailing window per sensor. A reading that's more than 4 standard deviations from its own recent baseline gets flagged.</p>
+      <div class="catches">Catches sudden spikes</div>
+    </div>
+    <div class="detector-card mid">
+      <div class="num">2</div>
+      <h3>Temporal drift detector</h3>
+      <p>Compares a short-term rolling mean against a long-term baseline mean. A slow, gradual divergence between the two — invisible to a single-point check — signals miscalibration.</p>
+      <div class="catches">Catches gradual drift</div>
+    </div>
+    <div class="detector-card">
+      <div class="num">3</div>
+      <h3>Multivariate consistency</h3>
+      <p>Uses a physical prior — humidity should move roughly opposite to temperature deviation. A large residual from that expected relationship means the sensors disagree with physics, even if each looks "in range" alone.</p>
+      <div class="catches">Catches cross-sensor faults no single sensor shows</div>
+    </div>
+  </div>
+
+  <div class="section-intro">
+    <h2 style="font-size:20px;">Fusion, health scoring, and explainability</h2>
+    <p>Structural faults (missing data, frozen values, out-of-range readings) resolve deterministically with high confidence. Behavioral faults get a confidence score based on how many of the three detectors agree — and every alert is paired with a plain-English reason, not just a number, because a judge should be able to read <em>why</em> in one glance. A rolling 4-hour health score then tracks each station's overall trust level over time, catching slow degradation even before any single alert fires.</p>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-stack">
+  <div class="section-intro">
+    <h2>What we actually used to build this</h2>
+    <p>No black-box ML library doing the heavy lifting — the detection logic is transparent, tunable, and explainable end to end. Here's the real stack, layer by layer.</p>
+  </div>
+
+  <div class="stack-grid">
+    <div class="stack-card">
+      <div class="stack-head"><span class="tag">Data layer</span></div>
+      <h3>Synthetic AWS stream generator</h3>
+      <ul>
+        <li>Python + NumPy for a diurnal (day/night) temperature cycle, slow-drifting pressure, and anti-correlated humidity</li>
+        <li>Pandas for the timestamped, multi-station DataFrame</li>
+        <li>Five labeled fault types injected on top: spike, freeze, drift, dropout, cross-sensor inconsistency — each with ground-truth labels for scoring</li>
+      </ul>
+      <div class="why">Why: lets us measure real precision/recall before any sponsor data is available, and swaps for real IMD/MoES data without changing the pipeline interface.</div>
+    </div>
+
+    <div class="stack-card">
+      <div class="stack-head"><span class="tag">Detection layer</span></div>
+      <h3>Hybrid rule + statistics engine</h3>
+      <ul>
+        <li>Rolling-window statistics in Pandas (z-score, short/long mean divergence)</li>
+        <li>A simple physics-based residual check for cross-sensor consistency</li>
+        <li>No opaque deep model — every threshold is a number we can defend to a judge</li>
+      </ul>
+      <div class="why">Why: explainability is a scored rubric criterion — a hand-tunable ensemble is easier to justify live than a neural net.</div>
+    </div>
+
+    <div class="stack-card">
+      <div class="stack-head"><span class="tag">Fusion layer</span></div>
+      <h3>Classification + explanation</h3>
+      <ul>
+        <li>Python rule-based fusion combining quality flags + detector votes</li>
+        <li>Outputs type, severity, confidence, and a generated plain-English reason per row</li>
+        <li>Evaluation harness scores everything against injected ground truth (precision/recall/F1/false-alert rate)</li>
+      </ul>
+      <div class="why">Why: keeps "what happened" and "how confident are we" as separate, auditable numbers.</div>
+    </div>
+
+    <div class="stack-card">
+      <div class="stack-head"><span class="tag">Presentation layer</span></div>
+      <h3>This dashboard</h3>
+      <ul>
+        <li>Single-file HTML/CSS/vanilla JavaScript — no build step, runs offline from any laptop</li>
+        <li>Chart.js (CDN) for the live-updating sensor chart</li>
+        <li>Pipeline output exported to JSON once, then replayed client-side at adjustable speed for the demo</li>
+      </ul>
+      <div class="why">Why: zero setup risk on stage — no server, no dependencies to install, just open the file.</div>
+    </div>
+  </div>
+
+  <div class="section-intro">
+    <h2 style="font-size:18px;">Data flow, start to finish</h2>
+  </div>
+  <div class="flow-row">
+    <div class="flow-box"><div class="step-num">PYTHON</div><div class="step-title">pipeline.py runs detection</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><div class="step-num">EXPORT</div><div class="step-title">Results written to JSON</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box highlight"><div class="step-num">BROWSER</div><div class="step-title">This dashboard replays it live</div></div>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-results">
+  <div class="section-intro">
+    <h2>Honest results, and how we got them</h2>
+    <p>Every number below comes from scoring detector output against the ground-truth labels injected during data generation — not hand-picked examples.</p>
+  </div>
+
+  <div class="results-grid">
+    <div class="panel">
+      <h2>Recall by fault type</h2>
+      <canvas id="resultsChart" style="max-height:280px;"></canvas>
+    </div>
+    <div class="panel">
+      <h2>How we evaluated it</h2>
+      <div class="methodology-list">
+        <div class="method-step">
+          <div class="m-num">1</div>
+          <p><strong>Generate with known answers.</strong> Every synthetic reading carries a ground-truth label (normal or a specific fault type) set at injection time.</p>
+        </div>
+        <div class="method-step">
+          <div class="m-num">2</div>
+          <p><strong>Run detection blind.</strong> The pipeline never sees the ground-truth labels — it only sees raw sensor values, exactly like it would with real station data.</p>
+        </div>
+        <div class="method-step">
+          <div class="m-num">3</div>
+          <p><strong>Score point-by-point.</strong> Every reading is compared prediction vs. truth to get precision, recall, F1, and false-alert rate — plus a per-fault-type recall breakdown.</p>
+        </div>
+        <div class="method-step">
+          <div class="m-num">4</div>
+          <p><strong>Report it as-is.</strong> No cherry-picking the best run or hiding the weak category — the drift number below is the real number.</p>
+        </div>
+      </div>
+
+      <div class="limitation-box">
+        <div class="lb-title">Known limitation</div>
+        <p>Drift detection sits at ~25% recall — gradual sensor bias looks a lot like normal diurnal variation with our current short-vs-long rolling mean approach. A CUSUM-style test is the planned fix, and we're flagging it here rather than hiding it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script src="demo_dashboard_data.js"></script>
+<script>
+const STATIONS = Object.keys(AWS_DATA.stations);
+const SEV_COLOR = { high: '#e34948', medium: '#eda100', low: '#8aa3b3' };
+const TYPE_COLORS = {
+  freeze: '#2fa876', dropout: '#2e86ab', drift: '#d9752f',
+  spike: '#e34948', cross_sensor_inconsistency: '#a67fd6', normal: '#8aa3b3'
+};
+
+let currentStation = STATIONS[0];
+let currentMetric = 'temp';
+let idx = 0;
+let playing = false;
+let speed = 1;
+let timer = null;
+let alertCount = 0;
+let sessionAlerts = [];
+
+const metricLabel = { temp: 'Temperature (°C)', pres: 'Pressure (hPa)', hum: 'Humidity (%)' };
+const CHUNK = 40; // points visible in the rolling chart window
+
+// ---- render metric summary from benchmark ----
+document.getElementById('statPrecision').textContent = Math.round(AWS_DATA.metrics.overall.precision * 100) + '%';
+document.getElementById('statRecall').textContent = Math.round(AWS_DATA.metrics.overall.recall * 100) + '%';
+document.getElementById('statFalseAlert').textContent = Math.round(AWS_DATA.metrics.overall.false_alert_rate * 100) + '%';
+
+const recallOrder = ['freeze', 'dropout', 'cross_sensor_inconsistency', 'spike', 'drift'];
+const recallLabels = { freeze: 'Freeze', dropout: 'Dropout', cross_sensor_inconsistency: 'Cross-sensor', spike: 'Spike', drift: 'Drift' };
+const recallMini = document.getElementById('recallMini');
+recallOrder.forEach(t => {
+  const d = AWS_DATA.metrics.per_anomaly_type_recall[t];
+  if (!d) return;
+  const pct = Math.round(d.recall * 100);
+  const row = document.createElement('div');
+  row.className = 'recall-row';
+  row.innerHTML = `<span class="name">${recallLabels[t]}</span>
+    <div class="recall-track"><div class="recall-fill" style="width:${pct}%;background:${pct>=70?'#2fa876':pct>=40?'#eda100':'#e34948'}"></div></div>
+    <span class="recall-pct">${pct}%</span>`;
+  recallMini.appendChild(row);
+});
+
+// ---- station tabs ----
+const tabsEl = document.getElementById('stationTabs');
+STATIONS.forEach((sid, i) => {
+  const b = document.createElement('button');
+  b.textContent = sid.replace('AWS_', '').replace('_', ' ');
+  if (i === 0) b.classList.add('active');
+  b.onclick = () => switchStation(sid, b);
+  tabsEl.appendChild(b);
+});
+function switchStation(sid, btn) {
+  currentStation = sid;
+  [...tabsEl.children].forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  resetReplay();
+}
+
+// ---- metric toggle ----
+document.getElementById('chartToggle').addEventListener('click', (e) => {
+  if (e.target.tagName !== 'BUTTON') return;
+  currentMetric = e.target.dataset.metric;
+  [...e.currentTarget.children].forEach(c => c.classList.remove('active'));
+  e.target.classList.add('active');
+  chart.data.datasets[0].label = metricLabel[currentMetric];
+  chart.options.scales.y.title.text = metricLabel[currentMetric];
+  redrawWindow();
+});
+
+// ---- chart setup ----
+const ctx = document.getElementById('mainChart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: [], datasets: [{
+    label: metricLabel.temp, data: [],
+    borderColor: '#2e86ab', backgroundColor: 'rgba(46,134,171,0.12)',
+    borderWidth: 2, fill: true, tension: 0.2, spanGaps: false,
+    pointRadius: [], pointBackgroundColor: [], pointBorderColor: []
+  }]},
+  options: {
+    responsive: true, maintainAspectRatio: true, aspectRatio: 2.4,
+    animation: { duration: 200 },
+    plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: (c) => c.parsed.y === null ? 'missing reading' : c.parsed.y } } },
+    scales: {
+      x: { ticks: { color: '#8aa3b3', maxTicksLimit: 6 }, grid: { color: '#1e3a4f' } },
+      y: { ticks: { color: '#8aa3b3' }, grid: { color: '#1e3a4f' },
+           title: { display: true, text: metricLabel.temp, color: '#8aa3b3', font: { size: 11 } } }
+    }
+  }
+});
+
+function redrawWindow() {
+  const rows = AWS_DATA.stations[currentStation];
+  const start = Math.max(0, idx - CHUNK);
+  const slice = rows.slice(start, idx + 1);
+  chart.data.labels = slice.map(r => r.t.slice(5, 16));
+  chart.data.datasets[0].data = slice.map(r => r[currentMetric]);
+  chart.data.datasets[0].pointRadius = slice.map(r => r.anom ? 4 : 0);
+  chart.data.datasets[0].pointBackgroundColor = slice.map(r => r.anom ? (SEV_COLOR[r.sev] || '#e34948') : 'transparent');
+  chart.data.datasets[0].pointBorderColor = slice.map(r => r.anom ? (SEV_COLOR[r.sev] || '#e34948') : 'transparent');
+  chart.update('none');
+}
+
+// ---- health ring ----
+function updateHealth(score) {
+  const pct = Math.round(score * 100);
+  const circumference = 226;
+  const offset = circumference * (1 - score);
+  const circle = document.getElementById('healthCircle');
+  circle.setAttribute('stroke-dashoffset', offset);
+  circle.setAttribute('stroke', pct >= 80 ? '#2fa876' : pct >= 50 ? '#d9752f' : '#e34948');
+  document.getElementById('healthPct').textContent = pct + '%';
+}
+
+// ---- alert feed ----
+function pushAlert(row) {
+  alertCount++;
+  document.getElementById('statAlerts').textContent = alertCount;
+  const feed = document.getElementById('alertFeed');
+  const empty = feed.querySelector('.empty-state');
+  if (empty) empty.remove();
+
+  const card = document.createElement('div');
+  card.className = 'alert-card ' + row.sev;
+  card.innerHTML = `
+    <div class="alert-top">
+      <span class="alert-type">${row.type.replace(/_/g,' ')}</span>
+      <span class="alert-sev ${row.sev}">${row.sev}</span>
+    </div>
+    <div class="alert-reason">${row.reason}</div>
+    <div class="alert-meta">${row.t} · ${Math.round(row.conf*100)}% confidence · ${currentStation}</div>
+  `;
+  feed.insertBefore(card, feed.firstChild);
+  while (feed.children.length > 40) feed.removeChild(feed.lastChild);
+}
+
+// ---- replay engine ----
+function tick() {
+  const rows = AWS_DATA.stations[currentStation];
+  if (idx >= rows.length - 1) { pause(); return; }
+  idx++;
+  const row = rows[idx];
+  redrawWindow();
+  updateHealth(row.health);
+  if (row.anom) pushAlert(row);
+
+  const pct = (idx / (rows.length - 1)) * 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressTime').textContent = row.t;
+  document.getElementById('progressCount').textContent = `${idx + 1} / ${rows.length} readings`;
+
+  const delay = Math.max(8, 90 / speed);
+  timer = setTimeout(tick, delay);
+}
+
+function play() {
+  playing = true;
+  document.getElementById('playBtn').textContent = '⏸';
+  tick();
+}
+function pause() {
+  playing = false;
+  document.getElementById('playBtn').textContent = '▶';
+  clearTimeout(timer);
+}
+function resetReplay() {
+  pause();
+  idx = 0;
+  alertCount = 0;
+  document.getElementById('statAlerts').textContent = '0';
+  document.getElementById('alertFeed').innerHTML = '<div class="empty-state">No anomalies yet — press play to start the replay.</div>';
+  document.getElementById('progressFill').style.width = '0%';
+  updateHealth(1.0);
+  chart.data.labels = [];
+  chart.data.datasets[0].data = [];
+  chart.update('none');
+  const rows = AWS_DATA.stations[currentStation];
+  document.getElementById('progressTime').textContent = rows[0].t;
+  document.getElementById('progressCount').textContent = `0 / ${rows.length} readings`;
+}
+
+document.getElementById('playBtn').onclick = () => playing ? pause() : play();
+document.getElementById('resetBtn').onclick = resetReplay;
+document.getElementById('speedGroup').addEventListener('click', (e) => {
+  if (e.target.tagName !== 'BUTTON') return;
+  speed = parseFloat(e.target.dataset.speed);
+  [...e.currentTarget.children].forEach(c => c.classList.remove('active'));
+  e.target.classList.add('active');
+});
+
+resetReplay();
+
+// ---- top-level nav tab switching ----
+document.getElementById('navTabs').addEventListener('click', (e) => {
+  if (e.target.tagName !== 'BUTTON') return;
+  const tab = e.target.dataset.tab;
+  [...document.querySelectorAll('#navTabs button')].forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  [...document.querySelectorAll('.tab-panel')].forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+
+  if (tab === 'monitor') {
+    chart.resize();
+  }
+  if (tab === 'results' && !window._resultsChartBuilt) {
+    buildResultsChart();
+    window._resultsChartBuilt = true;
+  }
+});
+
+// ---- static results tab chart ----
+function buildResultsChart() {
+  const rctx = document.getElementById('resultsChart').getContext('2d');
+  const labels = recallOrder.map(t => recallLabels[t]);
+  const values = recallOrder.map(t => Math.round((AWS_DATA.metrics.per_anomaly_type_recall[t]?.recall || 0) * 100));
+  const colors = values.map(v => v >= 70 ? '#2fa876' : v >= 40 ? '#d9752f' : '#e34948');
+  new Chart(rctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 6, barPercentage: 0.6 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true, aspectRatio: 1.6,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: (c) => c.parsed.y + '% recall' } } },
+      scales: {
+        x: { ticks: { color: '#8aa3b3' }, grid: { display: false } },
+        y: { ticks: { color: '#8aa3b3' }, grid: { color: '#1e3a4f' }, min: 0, max: 100 }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
