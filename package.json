@@ -1,0 +1,9 @@
+{
+  "name": "aws-sentinel",
+  "version": "1.0.0",
+  "description": "AWS Sentinel monitoring dashboard",
+  "scripts": {
+    "dev": "vercel dev",
+    "check": "echo Frontend uses native ES modules"
+  }
+}

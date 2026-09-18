@@ -1,4 +1,5 @@
 import { getAWSStation } from "../api/imd.js";
+import { getWeatherData } from "../api/weather.js";
 import { normalizeAWSData } from "../data/normalizer.js";
 
 const CACHE_KEY = "aws-live-cache-v1";
@@ -21,7 +22,7 @@ export const store = {
     selectedStation: null,
     anomalies: [],
     history: readJson(HISTORY_KEY, {}),
-    settings: { refreshInterval: 300 }
+    settings: { refreshInterval: 300, provider: "weatherapi" }
   },
 
   listeners: [],
@@ -103,10 +104,16 @@ export const store = {
     this.notify();
 
     try {
-      const payload = await getAWSStation(stationId);
+      let payload;
+      if (this.state.settings.provider === "weatherapi") {
+        payload = await getWeatherData(stationId);
+      } else {
+        payload = await getAWSStation(stationId);
+      }
+      
       const station = normalizeAWSData(payload)[0];
 
-      if (!station) throw new Error("IMD returned no observation for station " + stationId);
+      if (!station) throw new Error("API returned no observation for station " + stationId);
 
       this.state.stations = [station];
       this.state.data = this.state.stations;

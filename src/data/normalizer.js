@@ -1,4 +1,34 @@
 export function normalizeAWSData(payload) {
+  if (payload?.source === "WeatherAPI") {
+    const loc = payload.data?.location;
+    const cur = payload.data?.current;
+    if (!loc || !cur) return [];
+    
+    return [{
+      id: loc.name.toUpperCase().replace(/\s+/g, "_"),
+      callSign: loc.name,
+      station: loc.name,
+      district: loc.name,
+      state: loc.region,
+      date: loc.localtime?.split(" ")[0] || null,
+      time: loc.localtime?.split(" ")[1] || null,
+      timestamp: cur.last_updated || new Date().toISOString(),
+      temperature: toNumber(cur.temp_c),
+      dewPoint: toNumber(cur.dewpoint_c),
+      humidity: toNumber(cur.humidity),
+      windDirection: toNumber(cur.wind_degree),
+      windSpeed: toNumber(cur.wind_kph),
+      pressure: toNumber(cur.pressure_mb),
+      minTemperature: null,
+      maxTemperature: null,
+      latitude: toNumber(loc.lat),
+      longitude: toNumber(loc.lon),
+      weatherCode: cur.condition?.code || null,
+      nebulosity: toNumber(cur.cloud),
+      feelsLike: toNumber(cur.feelslike_c)
+    }];
+  }
+
   const root = payload?.data ?? payload;
   const rows =
     Array.isArray(root?.data) ? root.data :
