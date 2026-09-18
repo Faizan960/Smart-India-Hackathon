@@ -45,17 +45,25 @@ before the internal round).
 - `health.py` — rolling sensor-health score + degradation trend
 - `pipeline.py` — orchestrates everything + evaluation + dashboard JSON export
 
-## Next steps toward a full MVP
+## Live IMD Integration
 
-1. **Real data**: swap `data_gen.py` for actual IMD/MoES AWS historical data
-   if the sponsor provides it — the pipeline interface (a DataFrame with
-   timestamp/station_id/temperature_c/pressure_hpa/humidity_pct) stays the same.
-2. **Improve drift detection**: current recall is weak (25%) — consider a
-   CUSUM (cumulative sum) test or a proper seasonal-decomposition baseline
-   instead of the simple short-vs-long rolling mean.
-3. **Live dashboard**: `pipeline.py` already exports `dashboard_payload.json`
-   in a shape ready for a live-replay dashboard (time series + alerts +
-   health trend + incident timeline).
-4. **Edge deployment stretch goal**: only attempt after the cloud pipeline is
-   stable, per the evaluation weighting (Energy/Deployability are 10% each,
-   Innovation/Accuracy are 25%/20% — don't over-invest early).
+The frontend dashboard is now integrated directly with the official India Meteorological Department AWS API.
+
+- **Official Source**: India Meteorological Department AWS API
+- **Endpoint**: `https://api.imd.gov.in/api/v1/aws_data`
+- **Prototype Station**: NDL (Lodi Road, New Delhi)
+
+### Connection Modes
+The application supports several data-fetching modes to handle network unreliability:
+1. **LIVE**: Successfully fetched the latest real-time observation from IMD.
+2. **CACHED**: If IMD is unreachable, the application falls back to the most recent successful observation stored locally.
+3. **ERROR**: No live observation could be reached and no cache exists.
+4. **DEMO**: Uses synthetic data for demonstration purposes (clearly labeled in the UI).
+
+### Local History & Anomaly Limitations
+The IMD endpoint provides current observations only, not complete historical time series. To enable anomaly detection, the application implements **local observation history**. 
+Every 5 minutes, it collects and persists the live observation locally (up to 288 points, approx. 24 hours). 
+
+**Important Constraints**:
+- The application does not claim to have historical IMD coverage from before it was started. It only plots observations it has actively collected.
+- Statistical anomaly detection (e.g., Z-Score for spikes) requires at least 6 consecutive observations. The anomaly engine will not force or fabricate anomalies on startup; it waits until a sufficient local baseline is established.
