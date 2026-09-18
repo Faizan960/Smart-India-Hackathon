@@ -13,9 +13,13 @@ module.exports = async function handler(req, res) {
       ? req.query.station.trim().toUpperCase()
       : "";
 
-    const url = station
+    let url = station
       ? IMD_AWS_URL + "?id=" + encodeURIComponent(station)
       : IMD_AWS_URL;
+    
+    if (process.env.IMD_API_KEY) {
+      url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(process.env.IMD_API_KEY);
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);

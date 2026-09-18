@@ -85,6 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
   store.fetchLiveData().catch(err => console.error("Initial IMD fetch failed:", err));
 
   setInterval(() => {
+    if (store.state.mode === "CONNECTING") return; // Prevent overlapping requests
     store.fetchLiveData().catch(err => console.error("IMD refresh failed:", err));
   }, store.state.settings.refreshInterval * 1000);
 });
