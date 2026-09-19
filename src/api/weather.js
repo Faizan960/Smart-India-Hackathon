@@ -11,7 +11,7 @@ export async function getWeatherData(location = "New Delhi", signal) {
   try { payload = await response.json(); } catch {}
 
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || `WeatherAPI HTTP ${response.status}`);
+    throw new Error(payload?.data?.error?.message || payload?.message || payload?.error || `WeatherAPI HTTP ${response.status}`);
   }
 
   return payload;

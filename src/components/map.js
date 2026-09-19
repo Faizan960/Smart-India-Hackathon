@@ -5,17 +5,20 @@ let markers = [];
 let lightLayer;
 let darkLayer;
 
-export function initMap(containerId) {
+export async function initMap(containerId) {
   if (mapInstance || !document.getElementById(containerId)) return;
 
   mapInstance = L.map(containerId).setView([20.5937, 78.9629], 5);
 
+  const cartoKey = window.appConfig?.cartoBasemapKey || "";
+  const keyParam = cartoKey ? `?key=${encodeURIComponent(cartoKey)}` : "";
+
   lightLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png${keyParam}`,
     { attribution: "&copy; OpenStreetMap contributors &copy; CARTO" }
   );
   darkLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${keyParam}`,
     { attribution: "&copy; OpenStreetMap contributors &copy; CARTO" }
   );
 

@@ -1,10 +1,12 @@
 import { getAWSStation } from "../api/imd.js";
 import { getWeatherData } from "../api/weather.js";
 import { normalizeAWSData } from "../data/normalizer.js";
+import { STATIONS } from "../data/stations.js";
+import { getDemoData } from "../data/demoData.js";
 
 const CACHE_KEY = "aws-live-cache-v1";
 const HISTORY_KEY = "aws-history-v1";
-const DEFAULT_STATION = "NDL";
+const DEFAULT_STATION = "DL-001";
 
 function readJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
@@ -37,10 +39,10 @@ export const store = {
   setMode(mode) {
     this.state.mode = mode;
     this.state.status =
-      mode === "LIVE" ? "CONNECTED" :
-      mode === "CACHED" ? "CACHED" :
-      mode === "ERROR" ? "ERROR" :
-      mode === "DEMO" ? "DEMO MODE" : "CONNECTING";
+      mode === "LIVE" ? "Live WeatherAPI" :
+      mode === "CACHED" ? "Cached Data" :
+      mode === "ERROR" ? "Connection Error" :
+      mode === "DEMO" ? "Demo Fallback" : "Connecting...";
   },
 
   appendHistory(station) {
@@ -99,64 +101,107 @@ export const store = {
     }];
   },
 
-  async fetchLiveStation(stationId = DEFAULT_STATION) {
+  async fetchLiveData() {
     this.setMode("CONNECTING");
     this.notify();
 
     try {
-      let payload;
-      if (this.state.settings.provider === "weatherapi") {
-        payload = await getWeatherData(stationId);
-      } else {
-        payload = await getAWSStation(stationId);
+      const promises = STATIONS.map(async (registryStation) => {
+        let payload;
+        if (this.state.settings.provider === "weatherapi") {
+          payload = await getWeatherData(registryStation.locationQuery);
+        } else {
+          payload = await getAWSStation(registryStation.id);
+        }
+        const stationData = normalizeAWSData(payload)[0];
+        if (!stationData) throw new Error("No data for " + registryStation.id);
+        
+        // Ensure ID matches registry for UI routing
+        stationData.id = registryStation.id;
+        // Keep coordinates from registry if weather API varies slightly
+        stationData.latitude = registryStation.latitude;
+        stationData.longitude = registryStation.longitude;
+        stationData.station = registryStation.name;
+        
+        return stationData;
+      });
+
+      const results = await Promise.allSettled(promises);
+      const liveStations = results
+        .filter(r => r.status === "fulfilled")
+        .map(r => r.value);
+
+      if (liveStations.length === 0) {
+        throw new Error("All live data requests failed.");
       }
+
+      this.state.stations = liveStations;
+      this.state.data = liveStations;
       
-      const station = normalizeAWSData(payload)[0];
-
-      if (!station) throw new Error("API returned no observation for station " + stationId);
-
-      this.state.stations = [station];
-      this.state.data = this.state.stations;
-      this.state.selectedStationId = station.id || stationId;
-      this.state.selectedStation = station;
+      if (!this.state.selectedStationId || !this.state.stations.find(s => s.id === this.state.selectedStationId)) {
+        this.state.selectedStationId = this.state.stations[0].id;
+      }
+      this.state.selectedStation = this.state.stations.find(s => s.id === this.state.selectedStationId);
       this.state.lastSync = new Date().toISOString();
 
-      this.appendHistory(station);
-      this.state.anomalies = this.detectAnomalies(station);
+      let allAnomalies = [];
+      liveStations.forEach(station => {
+        this.appendHistory(station);
+        allAnomalies = allAnomalies.concat(this.detectAnomalies(station));
+      });
+      this.state.anomalies = allAnomalies;
       this.setMode("LIVE");
 
       try {
         localStorage.setItem(CACHE_KEY, JSON.stringify({
-          station,
+          stations: liveStations,
           savedAt: this.state.lastSync
         }));
       } catch {}
 
       this.notify();
-      return station;
+      return liveStations;
     } catch (error) {
+      console.warn("Live fetch failed, attempting cache/demo fallback...", error);
       const cached = readJson(CACHE_KEY, null);
 
-      if (cached?.station) {
-        this.state.stations = [cached.station];
-        this.state.data = this.state.stations;
-        this.state.selectedStation = cached.station;
-        this.state.selectedStationId = cached.station.id || stationId;
+      if (cached?.stations?.length > 0) {
+        this.state.stations = cached.stations;
+        this.state.data = cached.stations;
+        this.state.selectedStationId = this.state.selectedStationId || cached.stations[0].id;
+        this.state.selectedStation = cached.stations.find(s => s.id === this.state.selectedStationId) || cached.stations[0];
         this.state.lastSync = cached.savedAt || null;
-        this.state.anomalies = this.detectAnomalies(cached.station);
+        
+        let allAnomalies = [];
+        this.state.stations.forEach(station => {
+          allAnomalies = allAnomalies.concat(this.detectAnomalies(station));
+        });
+        this.state.anomalies = allAnomalies;
+        
         this.setMode("CACHED");
         this.notify();
-        return cached.station;
+        return cached.stations;
       }
 
-      this.setMode("ERROR");
+      // Final fallback to Demo Data
+      console.warn("Falling back to Demo Mode.");
+      const demoResult = getDemoData();
+      this.state.stations = demoResult.data;
+      this.state.data = demoResult.data;
+      this.state.selectedStationId = this.state.selectedStationId || demoResult.data[0].id;
+      this.state.selectedStation = demoResult.data.find(s => s.id === this.state.selectedStationId) || demoResult.data[0];
+      this.state.lastSync = new Date().toISOString();
+      
+      let allAnomalies = [];
+      this.state.stations.forEach(station => {
+        allAnomalies = allAnomalies.concat(this.detectAnomalies(station));
+      });
+      this.state.anomalies = allAnomalies;
+      
+      this.setMode("DEMO");
       this.notify();
-      throw error;
+      return demoResult.data;
     }
-  },
-
-  async fetchLiveData() {
-    return this.fetchLiveStation(DEFAULT_STATION);
   },
 
   setSelectedStation(stationId) {

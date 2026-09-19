@@ -38,8 +38,21 @@ WEATHERAPI_KEY=YOUR_KEY_HERE
 > [!CAUTION]
 > **Never commit your `.env.local` file.**
 
+For the map frontend, create a `src/config.local.js` file:
+```js
+export const LOCAL_CONFIG = {
+  CARTO_BASEMAP_KEY: "YOUR_CARTO_KEY_HERE"
+};
+```
+> [!CAUTION]
+> **Never commit your `src/config.local.js` file.**
+
+The project uses two separate credentials:
+1. **WEATHERAPI_KEY**: Used strictly on the backend to fetch live telemetry. It is securely kept on the server (`.env.local`) and never exposed to the frontend.
+2. **CARTO_BASEMAP_KEY**: Used to authenticate the CARTO map tiles (Voyager and Dark Matter). The frontend retrieves this configuration via the ignored `src/config.local.js`.
+
 For Vercel deployment:
-Go to **Project → Settings → Environment Variables** and add `WEATHER_PROVIDER` and `WEATHERAPI_KEY`.
+Go to **Project → Settings → Environment Variables** and add `WEATHER_PROVIDER` and `WEATHERAPI_KEY`. (CARTO configuration must be injected into the static build or handled accordingly for production, but locally uses `config.local.js`).
 
 ## Live Weather Provider
 The application uses WeatherAPI to fetch real-time weather telemetry. 

@@ -38,8 +38,8 @@ function renderInvestigationTable(anomalies) {
   });
 }
 
-function initUI() {
-  initMap("mapContainer");
+async function initUI() {
+  await initMap("mapContainer");
   initCharts();
 
   const nav = document.getElementById("navTabs");
@@ -67,9 +67,10 @@ function initUI() {
     if (connText) connText.textContent = state.status;
     if (connDot) {
       connDot.className = "w-2 h-2 rounded-full " +
-        (state.status === "CONNECTED" ? "bg-secondary" :
-         state.status === "CACHED" ? "bg-tertiary" :
-         state.status === "ERROR" ? "bg-error" : "bg-outline animate-pulse");
+        (state.status === "Live WeatherAPI" ? "bg-secondary" :
+         state.status === "Cached Data" ? "bg-tertiary" :
+         state.status === "Demo Fallback" ? "bg-tertiary" :
+         state.status === "Connection Error" ? "bg-error" : "bg-outline animate-pulse");
     }
 
     const count = document.getElementById("kpi-anomalies");
@@ -79,13 +80,26 @@ function initUI() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
-  initUI();
-  store.fetchLiveData().catch(err => console.error("Initial IMD fetch failed:", err));
+  
+  try {
+    const configRes = await fetch("/api/config/public");
+    if (configRes.ok) {
+      window.appConfig = await configRes.json();
+    } else {
+      window.appConfig = {};
+    }
+  } catch (err) {
+    console.warn("Could not fetch public config:", err);
+    window.appConfig = {};
+  }
+
+  await initUI();
+  store.fetchLiveData().catch(err => console.error("Initial live fetch failed:", err));
 
   setInterval(() => {
     if (store.state.mode === "CONNECTING") return; // Prevent overlapping requests
-    store.fetchLiveData().catch(err => console.error("IMD refresh failed:", err));
+    store.fetchLiveData().catch(err => console.error("Live refresh failed:", err));
   }, store.state.settings.refreshInterval * 1000);
 });

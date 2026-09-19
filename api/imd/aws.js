@@ -1,3 +1,8 @@
+try {
+  require("dotenv").config({ path: require("path").resolve(process.cwd(), ".env.local") });
+  require("dotenv").config();
+} catch {}
+
 const IMD_AWS_URL = "https://api.imd.gov.in/api/v1/aws_data";
 
 module.exports = async function handler(req, res) {

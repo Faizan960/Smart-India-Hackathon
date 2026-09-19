@@ -1,3 +1,8 @@
+try {
+  require("dotenv").config({ path: require("path").resolve(process.cwd(), ".env.local") });
+  require("dotenv").config();
+} catch {}
+
 module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
@@ -45,8 +50,9 @@ module.exports = async function handler(req, res) {
     res.statusCode = 502;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     return res.end(JSON.stringify({
-      error: "Unable to reach WeatherAPI",
-      message: error?.name === "AbortError" ? "WeatherAPI request timed out" : (error?.message || "Unknown error")
+      ok: false,
+      provider: "WeatherAPI",
+      error: error?.name === "AbortError" ? "WeatherAPI request timed out" : (error?.message || "Unknown error")
     }));
   }
 };
