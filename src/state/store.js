@@ -24,7 +24,7 @@ export const store = {
     selectedStation: null,
     anomalies: [],
     history: readJson(HISTORY_KEY, {}),
-    settings: { refreshInterval: 300, provider: "weatherapi" }
+    settings: { refreshInterval: 60, provider: "openweathermap" }
   },
 
   listeners: [],
@@ -39,7 +39,7 @@ export const store = {
   setMode(mode) {
     this.state.mode = mode;
     this.state.status =
-      mode === "LIVE" ? "Live WeatherAPI" :
+      mode === "LIVE" ? "Live OpenWeatherMap" :
       mode === "CACHED" ? "Cached Data" :
       mode === "ERROR" ? "Connection Error" :
       mode === "DEMO" ? "Demo Fallback" : "Connecting...";
@@ -53,13 +53,20 @@ export const store = {
 
     const point = {
       timestamp: station.timestamp,
-      temperature: station.temperature
+      lastUpdatedEpoch: station.lastUpdatedEpoch || Math.floor(Date.now() / 1000),
+      fetchedAt: station.fetchedAt || new Date().toISOString(),
+      temperature: station.temperature,
+      humidity: station.humidity,
+      pressure: station.pressure,
+      windSpeed: station.windSpeed
     };
 
     const last = series[series.length - 1];
-    if (!last || last.timestamp !== point.timestamp || last.temperature !== point.temperature) {
+    // Check if it's genuinely a new observation using the epoch from API if available
+    if (!last || last.lastUpdatedEpoch !== point.lastUpdatedEpoch) {
       series.push(point);
-      this.state.history[station.id] = series.slice(-288);
+      // Truncate to exactly 1440 points (24 hours at 1 min intervals)
+      this.state.history[station.id] = series.slice(-1440);
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(this.state.history));
       } catch {}
@@ -85,7 +92,7 @@ export const store = {
     if (z < 3) return [];
 
     return [{
-      id: `${station.id}-${station.timestamp}`,
+      id: `${station.id}-${station.lastUpdatedEpoch || station.timestamp}`,
       stationId: station.id,
       stationName: station.station || station.callSign || station.id,
       sensor: "Temperature",
@@ -102,17 +109,29 @@ export const store = {
   },
 
   async fetchLiveData() {
-    this.setMode("CONNECTING");
+    this.setMode("LOADING");
     this.notify();
 
     try {
       const promises = STATIONS.map(async (registryStation) => {
         let payload;
-        if (this.state.settings.provider === "weatherapi") {
+        if (this.state.settings.provider === "openweathermap") {
           payload = await getWeatherData(registryStation.locationQuery);
         } else {
           payload = await getAWSStation(registryStation.id);
         }
+        
+        // Demo fault injection logic
+        if (window.__demoFaultInjectionEnabled && payload?.data?.main) {
+           if (registryStation.id === "NDL") {
+              const faultType = window.__demoFaultType || "SPIKE";
+              if (faultType === "SPIKE") payload.data.main.temp += 15.0;
+              if (faultType === "DROP") payload.data.main.temp -= 15.0;
+              if (faultType === "FREEZE") payload.data.main.temp = window.__demoFreezeValue || payload.data.main.temp;
+              if (faultType === "DRIFT") payload.data.main.temp += (Math.random() * 2) + 1; // Accumulating error over time would require state, simplified here to constant upward bias
+           }
+        }
+        
         const stationData = normalizeAWSData(payload)[0];
         if (!stationData) throw new Error("No data for " + registryStation.id);
         
@@ -130,9 +149,16 @@ export const store = {
       const liveStations = results
         .filter(r => r.status === "fulfilled")
         .map(r => r.value);
+        
+      const failedCount = results.length - liveStations.length;
 
       if (liveStations.length === 0) {
+        this.setMode("ERROR");
         throw new Error("All live data requests failed.");
+      } else if (failedCount > 0) {
+        this.setMode("DEGRADED");
+      } else {
+        this.setMode("CONNECTED");
       }
 
       this.state.stations = liveStations;
@@ -150,7 +176,6 @@ export const store = {
         allAnomalies = allAnomalies.concat(this.detectAnomalies(station));
       });
       this.state.anomalies = allAnomalies;
-      this.setMode("LIVE");
 
       try {
         localStorage.setItem(CACHE_KEY, JSON.stringify({

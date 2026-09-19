@@ -32,8 +32,8 @@ pip install -r requirements.txt
 ## Environment Variables
 Create a `.env.local` file in the root of the project:
 ```env
-WEATHER_PROVIDER=weatherapi
-WEATHERAPI_KEY=YOUR_KEY_HERE
+WEATHER_PROVIDER=openweathermap
+OPENWEATHERMAP_API_KEY=YOUR_KEY_HERE
 ```
 > [!CAUTION]
 > **Never commit your `.env.local` file.**
@@ -48,14 +48,14 @@ export const LOCAL_CONFIG = {
 > **Never commit your `src/config.local.js` file.**
 
 The project uses two separate credentials:
-1. **WEATHERAPI_KEY**: Used strictly on the backend to fetch live telemetry. It is securely kept on the server (`.env.local`) and never exposed to the frontend.
+1. **OPENWEATHERMAP_API_KEY**: Used strictly on the backend to fetch live telemetry. It is securely kept on the server (`.env.local`) and never exposed to the frontend.
 2. **CARTO_BASEMAP_KEY**: Used to authenticate the CARTO map tiles (Voyager and Dark Matter). The frontend retrieves this configuration via the ignored `src/config.local.js`.
 
 For Vercel deployment:
-Go to **Project → Settings → Environment Variables** and add `WEATHER_PROVIDER` and `WEATHERAPI_KEY`. (CARTO configuration must be injected into the static build or handled accordingly for production, but locally uses `config.local.js`).
+Go to **Project → Settings → Environment Variables** and add `WEATHER_PROVIDER` and `OPENWEATHERMAP_API_KEY`. (CARTO configuration must be injected into the static build or handled accordingly for production, but locally uses `config.local.js`).
 
 ## Live Weather Provider
-The application uses WeatherAPI to fetch real-time weather telemetry. 
+The application uses OpenWeatherMap to fetch real-time weather telemetry. 
 - The credential is only accessed server-side via the Vercel function `/api/weather/current`.
 - The frontend will gracefully fall back to local `CACHED` mode if the API is unreachable.
 - The original IMD integration is preserved and can be used in the future by changing the provider in the configuration.
@@ -87,4 +87,4 @@ This will spin up a local development server on port 3000 and run the serverless
 - The API key is securely routed through the Vercel proxy.
 
 ## Current Limitations
-- Historical data is collected locally in the browser (up to 288 points). The application does not pull historical time-series data from the live API.
+- Historical data is collected locally in the browser (up to 1440 points). The application does not pull historical time-series data from the live API.

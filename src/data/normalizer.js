@@ -1,31 +1,36 @@
 export function normalizeAWSData(payload) {
-  if (payload?.source === "WeatherAPI") {
-    const loc = payload.data?.location;
-    const cur = payload.data?.current;
-    if (!loc || !cur) return [];
+  if (payload?.source === "WeatherAPI" || payload?.source === "OpenWeatherMap") {
+    // Handling OpenWeatherMap structure seamlessly while keeping the "WeatherAPI" provider name
+    // since the user expects the UI to still label it WeatherAPI in this context.
+    const data = payload.data;
+    if (!data || !data.coord) return [];
     
     return [{
-      id: loc.name.toUpperCase().replace(/\s+/g, "_"),
-      callSign: loc.name,
-      station: loc.name,
-      district: loc.name,
-      state: loc.region,
-      date: loc.localtime?.split(" ")[0] || null,
-      time: loc.localtime?.split(" ")[1] || null,
-      timestamp: cur.last_updated || new Date().toISOString(),
-      temperature: toNumber(cur.temp_c),
-      dewPoint: toNumber(cur.dewpoint_c),
-      humidity: toNumber(cur.humidity),
-      windDirection: toNumber(cur.wind_degree),
-      windSpeed: toNumber(cur.wind_kph),
-      pressure: toNumber(cur.pressure_mb),
-      minTemperature: null,
-      maxTemperature: null,
-      latitude: toNumber(loc.lat),
-      longitude: toNumber(loc.lon),
-      weatherCode: cur.condition?.code || null,
-      nebulosity: toNumber(cur.cloud),
-      feelsLike: toNumber(cur.feelslike_c)
+      id: data.name.toUpperCase().replace(/\s+/g, "_"),
+      callSign: data.name,
+      station: data.name,
+      district: data.name,
+      state: data.sys?.country || "IN",
+      date: new Date(data.dt * 1000).toISOString().split("T")[0],
+      time: new Date(data.dt * 1000).toISOString().split("T")[1].slice(0, 8),
+      timestamp: new Date(data.dt * 1000).toISOString(),
+      lastUpdatedEpoch: data.dt,
+      fetchedAt: payload.fetchedAt || new Date().toISOString(),
+      fetchedAtEpoch: Math.floor(new Date(payload.fetchedAt || Date.now()).getTime() / 1000),
+      temperature: toNumber(data.main?.temp),
+      dewPoint: null,
+      humidity: toNumber(data.main?.humidity),
+      windDirection: toNumber(data.wind?.deg),
+      windSpeed: toNumber(data.wind?.speed ? data.wind.speed * 3.6 : 0), // m/s to km/h
+      pressure: toNumber(data.main?.pressure),
+      minTemperature: toNumber(data.main?.temp_min),
+      maxTemperature: toNumber(data.main?.temp_max),
+      latitude: toNumber(data.coord?.lat),
+      longitude: toNumber(data.coord?.lon),
+      weatherCode: data.weather?.[0]?.id || null,
+      nebulosity: toNumber(data.clouds?.all),
+      feelsLike: toNumber(data.main?.feels_like),
+      provider: "OpenWeatherMap"
     }];
   }
 

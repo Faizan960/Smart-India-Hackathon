@@ -38,39 +38,37 @@ function renderInvestigationTable(anomalies) {
   });
 }
 
+import { initNavigation } from "./ui/navigation.js";
+import { initOverview } from "./ui/overview.js";
+import { initStations } from "./ui/stations.js";
+import { initAnomalies } from "./ui/anomalies.js";
+
 async function initUI() {
   await initMap("mapContainer");
   initCharts();
-
-  const nav = document.getElementById("navTabs");
-  if (nav) {
-    nav.addEventListener("click", e => {
-      const btn = e.target.closest("button[data-tab]");
-      if (!btn) return;
-
-      document.querySelectorAll("#navTabs button[data-tab]").forEach(b => {
-        b.classList.toggle("bg-primary", b === btn);
-        b.classList.toggle("text-on-primary", b === btn);
-        b.classList.toggle("bg-surface-container", b !== btn);
-        b.classList.toggle("text-on-surface", b !== btn);
-      });
-
-      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-      document.getElementById("tab-" + btn.dataset.tab)?.classList.add("active");
-    });
-  }
+  initNavigation();
+  initOverview();
+  initStations();
+  initAnomalies();
 
   store.subscribe(state => {
-    const connText = document.getElementById("connText");
-    const connDot = document.getElementById("connDot");
-
-    if (connText) connText.textContent = state.status;
-    if (connDot) {
-      connDot.className = "w-2 h-2 rounded-full " +
-        (state.status === "Live WeatherAPI" ? "bg-secondary" :
-         state.status === "Cached Data" ? "bg-tertiary" :
-         state.status === "Demo Fallback" ? "bg-tertiary" :
-         state.status === "Connection Error" ? "bg-error" : "bg-outline animate-pulse");
+    const statusText = document.getElementById("statusText");
+    const statusDot = document.getElementById("statusDot");
+    
+    if (statusText && statusDot) {
+      if (state.mode === "LOADING") {
+        statusText.textContent = "Connecting";
+        statusDot.className = "dot connecting";
+      } else if (state.mode === "ERROR" || state.mode === "OFFLINE") {
+        statusText.textContent = "Error";
+        statusDot.className = "dot error";
+      } else if (state.mode === "DEGRADED") {
+        statusText.textContent = "Degraded";
+        statusDot.className = "dot warning";
+      } else {
+        statusText.textContent = "Connected";
+        statusDot.className = "dot connected";
+      }
     }
 
     const count = document.getElementById("kpi-anomalies");
@@ -96,10 +94,43 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   await initUI();
+
+  // 1. Load persisted history into memory
+  try {
+    const saved = localStorage.getItem("aws-history-v1");
+    if (saved) {
+      store.state.history = JSON.parse(saved);
+      // Trigger a render so charts display immediately
+      store.notify();
+    }
+  } catch {}
+
+  // 2. Initial fetch
   store.fetchLiveData().catch(err => console.error("Initial live fetch failed:", err));
 
+  // Polling engine
   setInterval(() => {
-    if (store.state.mode === "CONNECTING") return; // Prevent overlapping requests
-    store.fetchLiveData().catch(err => console.error("Live refresh failed:", err));
-  }, store.state.settings.refreshInterval * 1000);
+    // Notify subscribers periodically (e.g. for relative timestamps and countdowns)
+    window.dispatchEvent(new Event("tick"));
+
+    if (store.state.mode === "LOADING") return;
+    
+    if (store.state.lastSync) {
+      const msSince = Date.now() - new Date(store.state.lastSync).getTime();
+      const interval = window.__demoFastPolling ? 5000 : store.state.settings.refreshInterval * 1000;
+      if (msSince >= interval) {
+        store.fetchLiveData().catch(err => console.error("Live refresh failed:", err));
+      }
+    }
+  }, 1000);
+
+  // Manual refresh wiring
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      if (store.state.mode !== "LOADING") {
+        store.fetchLiveData();
+      }
+    });
+  }
 });

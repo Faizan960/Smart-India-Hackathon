@@ -13,13 +13,13 @@ module.exports = async function handler(req, res) {
 
   try {
     const location = req.query?.location || "New Delhi";
-    const apiKey = process.env.WEATHERAPI_KEY;
+    const apiKey = process.env.OPENWEATHERMAP_API_KEY;
 
     if (!apiKey) {
-      throw new Error("WEATHERAPI_KEY is not configured on the server.");
+      throw new Error("OPENWEATHERMAP_API_KEY is not configured on the server.");
     }
 
-    const url = `https://api.weatherapi.com/v1/current.json?key=${encodeURIComponent(apiKey)}&q=${encodeURIComponent(location)}`;
+    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(location)}&appid=${encodeURIComponent(apiKey)}&units=metric`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
@@ -41,7 +41,7 @@ module.exports = async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     return res.end(JSON.stringify({
-      source: "WeatherAPI",
+      source: "OpenWeatherMap",
       station: location,
       fetchedAt: new Date().toISOString(),
       data
@@ -51,8 +51,8 @@ module.exports = async function handler(req, res) {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     return res.end(JSON.stringify({
       ok: false,
-      provider: "WeatherAPI",
-      error: error?.name === "AbortError" ? "WeatherAPI request timed out" : (error?.message || "Unknown error")
+      provider: "OpenWeatherMap",
+      error: error?.name === "AbortError" ? "OpenWeatherMap request timed out" : (error?.message || "Unknown error")
     }));
   }
 };

@@ -1049,101 +1049,141 @@
                 <div class="attention-section">
                     <h2 class="title-medium" style="margin-bottom: 16px;">Needs Attention</h2>
                     <div class="attention-list" id="attentionList">
-                        <div class="attention-row" data-station="MH-042" onclick="window.viewStation('MH-042')">
-                            <span class="severity-dot critical"></span>
-                            <span class="attention-station">MH-042</span>
-                            <span class="attention-sensor">Temperature</span>
-                            <span class="attention-issue">Sudden spike +17.1 °C</span>
-                            <span class="attention-time">2 min ago</span>
-                            <span class="attention-severity critical">Critical</span>
-                        </div>
-                        <div class="attention-row" data-station="UT-019" onclick="window.viewStation('UT-019')">
-                            <span class="severity-dot critical"></span>
-                            <span class="attention-station">UT-019</span>
-                            <span class="attention-sensor">Rainfall</span>
-                            <span class="attention-issue">Intensity outlier 142 mm/h</span>
-                            <span class="attention-time">42 min ago</span>
-                            <span class="attention-severity critical">Critical</span>
-                        </div>
-                        <div class="attention-row" data-station="RJ-113" onclick="window.viewStation('RJ-113')">
-                            <span class="severity-dot warning"></span>
-                            <span class="attention-station">RJ-113</span>
-                            <span class="attention-sensor">Humidity</span>
-                            <span class="attention-issue">Systematic drift +17.4%</span>
-                            <span class="attention-time">14 min ago</span>
-                            <span class="attention-severity warning">Warning</span>
-                        </div>
-                        <div class="attention-row" data-station="KA-087" onclick="window.viewStation('KA-087')">
-                            <span class="severity-dot warning"></span>
-                            <span class="attention-station">KA-087</span>
-                            <span class="attention-sensor">Pressure</span>
-                            <span class="attention-issue">Sensor freeze 4.5 h</span>
-                            <span class="attention-time">26 min ago</span>
-                            <span class="attention-severity warning">Warning</span>
-                        </div>
+                        <!-- Populated dynamically via src/ui/overview.js -->
                     </div>
                     <button class="view-all-link" onclick="window.navigateTo('anomalies')">
                         View all anomalies <span class="material-symbols-outlined" style="font-size: 16px;">arrow_forward</span>
                     </button>
                 </div>
+
+                <!-- Developer Data Diagnostics -->
+                <div style="margin-top: 48px; border-top: 1px solid var(--separator); padding-top: 24px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <button onclick="document.getElementById('overviewDebugPanel').style.display = document.getElementById('overviewDebugPanel').style.display === 'none' ? 'block' : 'none'" style="background: none; border: none; color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                            <span class="material-symbols-outlined" style="font-size: 16px;">bug_report</span>
+                            Data Diagnostics (Developer)
+                        </button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <select id="demoFaultType" onchange="window.__demoFaultType = this.value" style="background: var(--surface); color: var(--text-secondary); border: 1px solid var(--separator); border-radius: 4px; padding: 2px 4px; font-size: 12px; outline: none;">
+                                <option value="SPIKE">Spike</option>
+                                <option value="DROP">Drop</option>
+                                <option value="FREEZE">Freeze</option>
+                                <option value="DRIFT">Drift</option>
+                            </select>
+                            <button onclick="window.__demoFaultInjectionEnabled = !window.__demoFaultInjectionEnabled; this.style.color = window.__demoFaultInjectionEnabled ? 'var(--critical)' : 'var(--text-tertiary)'; alert('Demo fault injection (' + (window.__demoFaultType || 'SPIKE') + ') is now ' + (window.__demoFaultInjectionEnabled ? 'ENABLED for NDL' : 'DISABLED'));" style="background: none; border: none; color: var(--text-tertiary); font-size: 12px; cursor: pointer; border: 1px solid currentColor; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
+                                DEMO FAULT INJECTION
+                            </button>
+                        </div>
+                    </div>
+                    <div id="overviewDebugPanel" style="display: none; margin-top: 12px; background: var(--surface-elevated); border: 1px solid var(--separator); border-radius: 12px; padding: 16px;">
+                        <pre id="overviewDebugContent" class="mono" style="font-size: 12px; color: var(--text-secondary); margin: 0; white-space: pre-wrap; word-break: break-all;"></pre>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- ── Page: Station Detail ── -->
+        <!-- ── Page: Stations ── -->
         <div class="page" id="page-stations">
             <div class="page-content">
-                <button class="station-back" onclick="window.navigateTo('overview')">
-                    <span class="material-symbols-outlined" style="font-size: 18px;">arrow_back_ios</span>
-                    Overview
-                </button>
+                
+                <!-- List View -->
+                <div id="stationListView">
+                    <div class="page-header" style="margin-bottom: 24px;">
+                        <h1 class="title-large">Stations</h1>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px; position: relative;">
+                        <span class="material-symbols-outlined" style="position: absolute; left: 16px; top: 12px; color: var(--text-tertiary); pointer-events: none;">search</span>
+                        <input type="text" id="stationListSearch" placeholder="Filter stations by ID, name, or region..." style="width: 100%; padding: 12px 16px 12px 48px; border-radius: 12px; border: 1px solid var(--separator); background: var(--surface); color: var(--text-primary); font-family: inherit; font-size: 15px; outline: none;">
+                    </div>
 
-                <div class="station-header">
-                    <h1 class="title-large" id="stationTitle">Mumbai — MH-042</h1>
-                    <div class="station-meta">
-                        <span class="body-secondary" style="display: flex; align-items: center; gap: 6px;">
-                            <span class="severity-dot critical" id="stationStatusDot"></span>
-                            <span id="stationStatusText">Sensor Anomaly</span>
-                        </span>
-                        <span class="caption" id="stationLocation">Mumbai, Maharashtra</span>
-                        <span class="caption" id="stationLastUpdate">Last update: 14:32 IST</span>
+                    <div class="attention-list" id="stationListContainer">
+                        <!-- Populated dynamically -->
                     </div>
                 </div>
 
-                <!-- Sensor Summary Strip -->
-                <div class="sensor-strip" id="sensorStrip">
-                    <div class="sensor-item">
-                        <span class="sensor-label">Temperature</span>
-                        <span><span class="sensor-value" id="sensorTemp">28.6</span><span class="sensor-unit">°C</span></span>
-                    </div>
-                    <div class="sensor-item">
-                        <span class="sensor-label">Humidity</span>
-                        <span><span class="sensor-value" id="sensorHum">71</span><span class="sensor-unit">%</span></span>
-                    </div>
-                    <div class="sensor-item">
-                        <span class="sensor-label">Pressure</span>
-                        <span><span class="sensor-value" id="sensorPres">1007</span><span class="sensor-unit">hPa</span></span>
-                    </div>
-                    <div class="sensor-item">
-                        <span class="sensor-label">Wind</span>
-                        <span><span class="sensor-value" id="sensorWind">14</span><span class="sensor-unit">km/h</span></span>
-                    </div>
-                </div>
+                <!-- Detail View -->
+                <div id="stationDetailView" style="display: none;">
+                    <button class="station-back" onclick="window.viewStationList()">
+                        <span class="material-symbols-outlined" style="font-size: 18px;">arrow_back_ios</span>
+                        All Stations
+                    </button>
 
-                <!-- Main Chart -->
-                <div class="chart-section">
-                    <div class="chart-header">
-                        <div>
-                            <h2 class="title-small">Temperature</h2>
-                            <p class="caption" id="chartSubtitle">Last 24 hours</p>
-                        </div>
-                        <div class="chart-controls" id="chartControls">
-                            <button class="chart-control-btn active" data-range="24h">24h</button>
-                            <button class="chart-control-btn" data-range="7d">7d</button>
-                            <button class="chart-control-btn" data-range="30d">30d</button>
+                    <div class="station-header">
+                        <h1 class="title-large" id="stationTitle">Mumbai — MH-042</h1>
+                        <div class="station-meta">
+                            <span class="body-secondary" style="display: flex; align-items: center; gap: 6px;">
+                                <span class="severity-dot critical" id="stationStatusDot"></span>
+                                <span id="stationStatusText">Sensor Anomaly</span>
+                            </span>
+                            <span class="caption" id="stationLocation">Mumbai, Maharashtra</span>
+                            <div style="display: flex; gap: 16px; margin-top: 6px;">
+                                <span class="caption">Observation: <span id="stationObservationTime">--</span></span>
+                                <span class="caption">Received: <span id="stationReceivedTime">--</span></span>
+                                <span class="caption">History: <span id="stationHistoryCount">--</span></span>
+                                <span class="caption">Source: <span id="stationSource">--</span></span>
+                            </div>
                         </div>
                     </div>
-                    <div class="chart-canvas-wrap">
-                        <canvas id="stationChart" height="280"></canvas>
+
+                    <!-- Sensor Summary Strip -->
+                    <div class="sensor-strip" id="sensorStrip">
+                        <div class="sensor-item">
+                            <span class="sensor-label">Temperature</span>
+                            <span><span class="sensor-value" id="sensorTemp">28.6</span><span class="sensor-unit">°C</span></span>
+                        </div>
+                        <div class="sensor-item">
+                            <span class="sensor-label">Humidity</span>
+                            <span><span class="sensor-value" id="sensorHum">71</span><span class="sensor-unit">%</span></span>
+                        </div>
+                        <div class="sensor-item">
+                            <span class="sensor-label">Pressure</span>
+                            <span><span class="sensor-value" id="sensorPres">1007</span><span class="sensor-unit">hPa</span></span>
+                        </div>
+                        <div class="sensor-item">
+                            <span class="sensor-label">Wind</span>
+                            <span><span class="sensor-value" id="sensorWind">14</span><span class="sensor-unit">km/h</span></span>
+                        </div>
+                    </div>
+
+                    <!-- Main Chart -->
+                    <div class="chart-section">
+                        <div class="chart-header">
+                            <div>
+                                <h2 class="title-small">Temperature</h2>
+                                <p class="caption" id="chartSubtitle">Last 24 hours</p>
+                            </div>
+                            <div class="chart-controls" id="chartControls">
+                                <button class="chart-control-btn active" data-range="24h">24h</button>
+                                <button class="chart-control-btn" data-range="7d">7d</button>
+                                <button class="chart-control-btn" data-range="30d">30d</button>
+                            </div>
+                        </div>
+                        <div class="chart-canvas-wrap">
+                            <canvas id="stationChart" height="280"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Raw API Inspector -->
+                    <div style="margin-top: 48px; border-top: 1px solid var(--separator); padding-top: 24px;">
+                        <button onclick="document.getElementById('rawApiContainer').style.display = document.getElementById('rawApiContainer').style.display === 'none' ? 'block' : 'none'" style="background: none; border: none; color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                            <span class="material-symbols-outlined" style="font-size: 16px;">code</span>
+                            View Raw API Response
+                        </button>
+                        <div id="rawApiContainer" style="display: none; margin-top: 12px; background: var(--surface-elevated); border: 1px solid var(--separator); border-radius: 12px; padding: 16px; overflow-x: auto;">
+                            <pre id="rawApiContent" class="mono" style="font-size: 12px; color: var(--text-secondary); margin: 0;"></pre>
+                        </div>
+                    </div>
+
+                    <!-- Developer Data Diagnostics -->
+                    <div style="margin-top: 48px; border-top: 1px solid var(--separator); padding-top: 24px;">
+                        <button onclick="document.getElementById('debugPanel').style.display = document.getElementById('debugPanel').style.display === 'none' ? 'block' : 'none'" style="background: none; border: none; color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                            <span class="material-symbols-outlined" style="font-size: 16px;">bug_report</span>
+                            Data Diagnostics (Developer)
+                        </button>
+                        <div id="debugPanel" style="display: none; margin-top: 12px; background: var(--surface-elevated); border: 1px solid var(--separator); border-radius: 12px; padding: 16px;">
+                            <pre id="debugContent" class="mono" style="font-size: 12px; color: var(--text-secondary); margin: 0; white-space: pre-wrap; word-break: break-all;"></pre>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1175,7 +1215,7 @@
                             <label>Sensor</label>
                             <select><option>All sensors</option><option>Temperature</option><option>Humidity</option><option>Pressure</option><option>Wind</option></select>
                             <label>Severity</label>
-                            <select><option>All</option><option>Critical</option><option>Warning</option></select>
+                            <select id="anomalySeverityFilter"><option>All</option><option>Critical</option><option>Warning</option></select>
                             <label>Status</label>
                             <select><option>All</option><option>New</option><option>Acknowledged</option><option>Verified</option></select>
                         </div>
@@ -1183,70 +1223,7 @@
                 </div>
 
                 <div class="anomaly-list" id="anomalyList">
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'MH-042',sensor:'Temperature',type:'Sudden spike',observed:'47.2 °C',expected:'30.1 °C',deviation:'+17.1 °C',confidence:'97%',severity:'critical',reason:'Rapid change from recent baseline. Neighboring stations read 29-31°C. Rate of rise exceeds physical plausibility for open-air coastal conditions.',time:'2 min ago'})">
-                        <span class="severity-dot critical"></span>
-                        <span class="attention-station">MH-042</span>
-                        <span class="attention-sensor">Temperature</span>
-                        <span class="attention-issue">Sudden spike</span>
-                        <span class="attention-time">2 min ago</span>
-                        <span class="anomaly-confidence">97%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'UT-019',sensor:'Rainfall',type:'Intensity outlier',observed:'142 mm/h',expected:'0.0 mm/h',deviation:'+142 mm/h',confidence:'89%',severity:'critical',reason:'Flash intensity not corroborated by Doppler radar or any neighboring gauge within 50 km.',time:'42 min ago'})">
-                        <span class="severity-dot critical"></span>
-                        <span class="attention-station">UT-019</span>
-                        <span class="attention-sensor">Rainfall</span>
-                        <span class="attention-issue">Intensity outlier</span>
-                        <span class="attention-time">42 min ago</span>
-                        <span class="anomaly-confidence">89%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'HP-004',sensor:'Temperature',type:'Cold spike',observed:'-18.4 °C',expected:'8.2 °C',deviation:'-26.6 °C',confidence:'98%',severity:'critical',reason:'Reading exceeds 4.8σ from 30-day seasonal baseline. Likely sensor lead wire fault.',time:'3 hr ago'})">
-                        <span class="severity-dot critical"></span>
-                        <span class="attention-station">HP-004</span>
-                        <span class="attention-sensor">Temperature</span>
-                        <span class="attention-issue">Cold spike outlier</span>
-                        <span class="attention-time">3 hr ago</span>
-                        <span class="anomaly-confidence">98%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'RJ-113',sensor:'Humidity',type:'Linear drift',observed:'82.4%',expected:'65.0%',deviation:'+17.4%',confidence:'91%',severity:'warning',reason:'Systematic upward drift detected over 72 hours. Cross-referenced with RJ-044 which shows nominal readings.',time:'14 min ago'})">
-                        <span class="severity-dot warning"></span>
-                        <span class="attention-station">RJ-113</span>
-                        <span class="attention-sensor">Humidity</span>
-                        <span class="attention-issue">Systematic drift</span>
-                        <span class="attention-time">14 min ago</span>
-                        <span class="anomaly-confidence">91%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'KA-087',sensor:'Pressure',type:'Sensor freeze',observed:'1008.2 hPa',expected:'1004.1 hPa',deviation:'0.00 hPa variance',confidence:'94%',severity:'warning',reason:'Zero variance for 4.5 hours. Diurnal pressure cycle completely absent — indicates stuck sensor.',time:'26 min ago'})">
-                        <span class="severity-dot warning"></span>
-                        <span class="attention-station">KA-087</span>
-                        <span class="attention-sensor">Pressure</span>
-                        <span class="attention-issue">Sensor freeze</span>
-                        <span class="attention-time">26 min ago</span>
-                        <span class="anomaly-confidence">94%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'KL-007',sensor:'Wind',type:'High jitter',observed:'78 km/h gust',expected:'24 km/h',deviation:'SNR < 14 dB',confidence:'84%',severity:'warning',reason:'Ultrasonic transducer B shows high noise floor. Likely contamination or physical obstruction.',time:'1 hr ago'})">
-                        <span class="severity-dot warning"></span>
-                        <span class="attention-station">KL-007</span>
-                        <span class="attention-sensor">Wind</span>
-                        <span class="attention-issue">High jitter / noise</span>
-                        <span class="attention-time">1 hr ago</span>
-                        <span class="anomaly-confidence">84%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'WB-031',sensor:'Solar Radiation',type:'Night inversion',observed:'45 W/m²',expected:'0 W/m²',deviation:'+45 W/m²',confidence:'92%',severity:'warning',reason:'Pyranometer reading 45 W/m² at 02:00 local time. Verified fault — condensation on sensor dome.',time:'5 hr ago'})">
-                        <span class="severity-dot warning"></span>
-                        <span class="attention-station">WB-031</span>
-                        <span class="attention-sensor">Solar Radiation</span>
-                        <span class="attention-issue">Night inversion offset</span>
-                        <span class="attention-time">5 hr ago</span>
-                        <span class="anomaly-confidence">92%</span>
-                    </div>
-                    <div class="anomaly-row" onclick="window.openAnomalyDrawer({station:'TN-012',sensor:'Humidity',type:'Saturation freeze',observed:'100.0%',expected:'68.4%',deviation:'Stuck at 100%',confidence:'90%',severity:'warning',reason:'Sensor locked at saturation ceiling. Likely condensation cap on capacitive element.',time:'4 hr ago'})">
-                        <span class="severity-dot warning"></span>
-                        <span class="attention-station">TN-012</span>
-                        <span class="attention-sensor">Humidity</span>
-                        <span class="attention-issue">Saturation freeze</span>
-                        <span class="attention-time">4 hr ago</span>
-                        <span class="anomaly-confidence">90%</span>
-                    </div>
+                    <!-- Populated dynamically via src/ui/anomalies.js -->
                 </div>
             </div>
         </div>
@@ -1276,19 +1253,38 @@
                 <p class="caption" style="margin-top: 4px;" id="drawerConfidence">97% confidence</p>
 
                 <div class="drawer-detail-grid" id="drawerDetails">
+                    <div class="drawer-detail-item" style="grid-column: span 2;">
+                        <label>Station</label>
+                        <span class="value" id="drawerStation" style="font-size: 14px; font-weight: 600;">--</span>
+                    </div>
+                    <div class="drawer-detail-item" style="grid-column: span 2;">
+                        <label>Detection Time</label>
+                        <span class="value" id="drawerTime" style="font-size: 14px;">--</span>
+                    </div>
                     <div class="drawer-detail-item">
                         <label>Observed</label>
-                        <span class="value" id="drawerObserved">47.2 °C</span>
+                        <span class="value" id="drawerObserved">47.2</span>
                     </div>
                     <div class="drawer-detail-item">
                         <label>Expected</label>
-                        <span class="value" id="drawerExpected">30.1 °C</span>
+                        <span class="value" id="drawerExpected">30.1</span>
+                    </div>
+                    <div class="drawer-detail-item" style="grid-column: span 2;">
+                        <label>Deviation</label>
+                        <span class="value" id="drawerDeviation" style="color: var(--critical);">+17.1</span>
                     </div>
                 </div>
 
                 <div class="drawer-reason">
                     <label>Why detected</label>
                     <p id="drawerReason">Rapid change from recent baseline.</p>
+                </div>
+
+                <div class="drawer-reason" style="margin-top: 16px;">
+                    <label>Chart Evidence</label>
+                    <div style="background: var(--surface-raised); border: 1px solid var(--separator); border-radius: 8px; margin-top: 8px; height: 120px; padding: 8px; box-sizing: border-box;">
+                        <canvas id="anomalyChart" style="width: 100%; height: 100%;"></canvas>
+                    </div>
                 </div>
 
                 <div class="drawer-actions">

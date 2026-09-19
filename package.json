@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "AWS Sentinel monitoring dashboard",
   "scripts": {
-    "dev": "vercel dev --local --listen 3000",
+    "start": "npx vercel dev --local --listen 3000",
     "check": "echo Frontend uses native ES modules"
   },
   "dependencies": {

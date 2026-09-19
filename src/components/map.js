@@ -1,4 +1,5 @@
 import { store } from "../state/store.js";
+import { STATIONS } from "../data/stations.js";
 
 let mapInstance = null;
 let markers = [];
@@ -45,16 +46,29 @@ function renderMarkers(state) {
   markers.forEach(m => mapInstance.removeLayer(m));
   markers = [];
 
-  const stations = state.data || [];
-  stations.forEach(station => {
-    if (!Number.isFinite(station.latitude) || !Number.isFinite(station.longitude)) return;
+  const now = Date.now();
 
-    const stationAnomalies = (state.anomalies || []).filter(a => a.stationId === station.id);
-    const color = stationAnomalies.some(a => a.severity === "CRITICAL")
-      ? "#ff453a"
-      : stationAnomalies.length
-        ? "#ff9f0a"
-        : "#34c759";
+  STATIONS.forEach(registry => {
+    const live = state.stations.find(s => s.id === registry.id);
+    
+    let color = "#8e8e93"; // Offline grey by default
+    let status = "Offline";
+    let temp = "—";
+    let hum = "—";
+    
+    if (live) {
+      temp = live.temperature?.toFixed(1) || "—";
+      hum = live.humidity?.toFixed(0) || "—";
+      const obsTime = live.lastUpdatedEpoch ? live.lastUpdatedEpoch * 1000 : new Date(live.timestamp).getTime();
+      const isStale = (now - obsTime) > 5 * 60 * 1000;
+      const hasCritical = state.anomalies.some(a => a.stationId === registry.id && a.severity === "CRITICAL");
+      const hasWarning = state.anomalies.some(a => a.stationId === registry.id && a.severity === "WARNING");
+      
+      if (hasCritical) { color = "#ff3b30"; status = "Critical"; }
+      else if (hasWarning) { color = "#ff9f0a"; status = "Warning"; }
+      else if (isStale) { color = "#ff9f0a"; status = "Stale"; }
+      else { color = "#34c759"; status = "Healthy"; }
+    }
 
     const icon = L.divIcon({
       html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 8px rgba(0,0,0,.3)"></div>`,
@@ -64,19 +78,39 @@ function renderMarkers(state) {
     });
 
     const popup = document.createElement("div");
+    let metaHtml = "";
+    if (live) {
+      const obsTimeStr = new Date(live.lastUpdatedEpoch ? live.lastUpdatedEpoch * 1000 : live.timestamp).toLocaleTimeString();
+      const recTimeStr = new Date(live.fetchedAtEpoch ? live.fetchedAtEpoch * 1000 : (live.fetchedAt || Date.now())).toLocaleTimeString();
+      metaHtml = `
+        <div style="margin-top:6px; font-size:11px; color:var(--text-tertiary);">
+          Observed: ${obsTimeStr}<br>
+          Received: ${recTimeStr}<br>
+          Provider: ${escapeHtml(live.provider || "Unknown")}
+        </div>
+      `;
+    }
+
     popup.innerHTML = `
-      <strong>${escapeHtml(station.station || station.callSign || station.id)}</strong><br>
-      ${escapeHtml(station.callSign || station.id)}<br>
-      ${escapeHtml(station.district || "")}, ${escapeHtml(station.state || "")}<br>
-      Temperature: ${station.temperature ?? "—"} °C<br>
-      Humidity: ${station.humidity ?? "—"}%
+      <strong style="display:block;margin-bottom:2px;">${escapeHtml(registry.name)}</strong>
+      <span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(registry.id)} • ${status}</span><br>
+      <div style="margin-top:6px;font-family:'JetBrains Mono', monospace;font-size:13px;">
+        Temp: ${temp} °C<br>
+        Hum: ${hum}%
+      </div>
+      ${metaHtml}
     `;
 
-    const marker = L.marker([station.latitude, station.longitude], { icon })
+    const marker = L.marker([registry.latitude, registry.longitude], { icon })
       .bindPopup(popup)
       .addTo(mapInstance);
 
-    marker.on("click", () => store.setSelectedStation(station.id));
+    marker.on("click", () => {
+      window.navigateTo("stations");
+      if (typeof window.viewStation === "function") {
+        window.viewStation(registry.id);
+      }
+    });
     markers.push(marker);
   });
 }
