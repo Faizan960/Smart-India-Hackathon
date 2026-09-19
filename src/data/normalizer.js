@@ -1,28 +1,45 @@
 export function normalizeAWSData(payload) {
   if (payload?.source === "WeatherAPI" || payload?.source === "OpenWeatherMap") {
-    // Handling OpenWeatherMap structure seamlessly while keeping the "WeatherAPI" provider name
-    // since the user expects the UI to still label it WeatherAPI in this context.
     const data = payload.data;
     if (!data || !data.coord) return [];
-    
+
+    const observedEpoch = data.dt;
+    const observedAt = new Date(observedEpoch * 1000).toISOString();
+    const receivedAt = payload.fetchedAt || new Date().toISOString();
+    const receivedEpoch = Math.floor(new Date(receivedAt).getTime() / 1000);
+
+    const tempC = toNumber(data.main?.temp);
+    const presHpa = toNumber(data.main?.pressure);
+    const humPct = toNumber(data.main?.humidity);
+
     return [{
       id: data.name.toUpperCase().replace(/\s+/g, "_"),
       callSign: data.name,
       station: data.name,
       district: data.name,
       state: data.sys?.country || "IN",
-      date: new Date(data.dt * 1000).toISOString().split("T")[0],
-      time: new Date(data.dt * 1000).toISOString().split("T")[1].slice(0, 8),
-      timestamp: new Date(data.dt * 1000).toISOString(),
-      lastUpdatedEpoch: data.dt,
-      fetchedAt: payload.fetchedAt || new Date().toISOString(),
-      fetchedAtEpoch: Math.floor(new Date(payload.fetchedAt || Date.now()).getTime() / 1000),
-      temperature: toNumber(data.main?.temp),
+      date: new Date(observedEpoch * 1000).toISOString().split("T")[0],
+      time: new Date(observedEpoch * 1000).toISOString().split("T")[1].slice(0, 8),
+      timestamp: observedAt,
+      lastUpdatedEpoch: observedEpoch,
+      // SIH26073 observation/receipt timestamps
+      observedAt,
+      observedEpoch,
+      receivedAt,
+      receivedEpoch,
+      fetchedAt: receivedAt,
+      fetchedAtEpoch: receivedEpoch,
+      // SIH26073 core fields
+      temperature: tempC,
+      temperatureC: tempC,
+      humidity: humPct,
+      humidityPct: humPct,
+      pressure: presHpa,
+      pressureHpa: presHpa,
+      // Contextual fields (not core anomaly features)
       dewPoint: null,
-      humidity: toNumber(data.main?.humidity),
       windDirection: toNumber(data.wind?.deg),
       windSpeed: toNumber(data.wind?.speed ? data.wind.speed * 3.6 : 0), // m/s to km/h
-      pressure: toNumber(data.main?.pressure),
       minTemperature: toNumber(data.main?.temp_min),
       maxTemperature: toNumber(data.main?.temp_max),
       latitude: toNumber(data.coord?.lat),
@@ -30,7 +47,9 @@ export function normalizeAWSData(payload) {
       weatherCode: data.weather?.[0]?.id || null,
       nebulosity: toNumber(data.clouds?.all),
       feelsLike: toNumber(data.main?.feels_like),
-      provider: "OpenWeatherMap"
+      provider: "OpenWeatherMap",
+      source: "OpenWeatherMap",
+      isSynthetic: false
     }];
   }
 
@@ -62,7 +81,8 @@ export function normalizeAWSData(payload) {
     longitude: toNumber(item.Longitude ?? item.longitude),
     weatherCode: item.WEATHER_CODE ?? item.weather_code ?? null,
     nebulosity: toNumber(item.NEBULOSITY ?? item.nebulosity),
-    feelsLike: toNumber(item["Feel Like"] ?? item.feels_like)
+    feelsLike: toNumber(item["Feel Like"] ?? item.feels_like),
+    isSynthetic: false
   })).filter((station) => station.id || station.callSign || station.station);
 }
 

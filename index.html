@@ -552,6 +552,8 @@
             border-radius: 16px;
             padding: 20px;
             box-shadow: var(--card-shadow);
+            min-height: 300px;
+            position: relative;
         }
 
         /* ── Anomalies Screen ── */
@@ -1007,19 +1009,19 @@
                 <!-- KPI Strip -->
                 <div class="kpi-strip" id="kpiStrip">
                     <div class="kpi-item">
-                        <div class="kpi-value" id="kpi-total">1,008</div>
+                        <div class="kpi-value" id="kpi-total">--</div>
                         <div class="kpi-label">Stations</div>
                     </div>
                     <div class="kpi-item">
-                        <div class="kpi-value" id="kpi-healthy" style="color: var(--success);">946</div>
+                        <div class="kpi-value" id="kpi-healthy" style="color: var(--success);">--</div>
                         <div class="kpi-label">Healthy</div>
                     </div>
                     <div class="kpi-item">
-                        <div class="kpi-value" id="kpi-attention" style="color: var(--warning);">17</div>
+                        <div class="kpi-value" id="kpi-attention" style="color: var(--warning);">--</div>
                         <div class="kpi-label">Attention</div>
                     </div>
                     <div class="kpi-item">
-                        <div class="kpi-value" id="kpi-critical" style="color: var(--critical);">4</div>
+                        <div class="kpi-value" id="kpi-critical" style="color: var(--critical);">--</div>
                         <div class="kpi-label">Critical</div>
                     </div>
                 </div>
@@ -1070,7 +1072,7 @@
                                 <option value="FREEZE">Freeze</option>
                                 <option value="DRIFT">Drift</option>
                             </select>
-                            <button onclick="window.__demoFaultInjectionEnabled = !window.__demoFaultInjectionEnabled; this.style.color = window.__demoFaultInjectionEnabled ? 'var(--critical)' : 'var(--text-tertiary)'; alert('Demo fault injection (' + (window.__demoFaultType || 'SPIKE') + ') is now ' + (window.__demoFaultInjectionEnabled ? 'ENABLED for NDL' : 'DISABLED'));" style="background: none; border: none; color: var(--text-tertiary); font-size: 12px; cursor: pointer; border: 1px solid currentColor; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
+                            <button onclick="window.__demoFaultInjectionEnabled = !window.__demoFaultInjectionEnabled; this.style.color = window.__demoFaultInjectionEnabled ? 'var(--critical)' : 'var(--text-tertiary)'; alert('Demo fault injection (' + (window.__demoFaultType || 'SPIKE') + ') is now ' + (window.__demoFaultInjectionEnabled ? 'ENABLED for DL-001 (New Delhi)' : 'DISABLED'));" style="background: none; border: none; color: var(--text-tertiary); font-size: 12px; cursor: pointer; border: 1px solid currentColor; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
                                 DEMO FAULT INJECTION
                             </button>
                         </div>
@@ -1117,9 +1119,10 @@
                                 <span id="stationStatusText">Sensor Anomaly</span>
                             </span>
                             <span class="caption" id="stationLocation">Mumbai, Maharashtra</span>
-                            <div style="display: flex; gap: 16px; margin-top: 6px;">
+                            <div style="display: flex; gap: 16px; margin-top: 6px; flex-wrap: wrap;">
                                 <span class="caption">Observation: <span id="stationObservationTime">--</span></span>
                                 <span class="caption">Received: <span id="stationReceivedTime">--</span></span>
+                                <span class="caption">Age: <span id="stationDataAge">--</span></span>
                                 <span class="caption">History: <span id="stationHistoryCount">--</span></span>
                                 <span class="caption">Source: <span id="stationSource">--</span></span>
                             </div>
@@ -1203,7 +1206,7 @@
                 </div>
 
                 <div class="anomaly-controls">
-                    <span class="caption" id="anomalyCount">17 anomalies</span>
+                    <span class="caption" id="anomalyCount">0 anomalies</span>
                     <div style="position: relative;">
                         <button class="filter-btn" id="filterBtn">
                             <span class="material-symbols-outlined" style="font-size: 16px;">tune</span>

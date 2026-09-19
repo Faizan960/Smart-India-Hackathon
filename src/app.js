@@ -1,47 +1,50 @@
 import { initCharts } from "./components/charts.js";
 import { initMap } from "./components/map.js";
 import { store } from "./state/store.js";
-
-function initTheme() {
-  const toggle = document.getElementById("themeToggle");
-  if (!toggle) return;
-
-  toggle.addEventListener("click", () => {
-    document.documentElement.classList.toggle("dark");
-    localStorage.theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
-    window.dispatchEvent(new Event("themeChanged"));
-  });
-}
-
-function renderInvestigationTable(anomalies) {
-  const tbody = document.getElementById("investigationTableBody");
-  if (!tbody) return;
-
-  tbody.innerHTML = anomalies.length
-    ? ""
-    : '<tr><td colspan="8" class="text-center py-8 text-on-surface-variant">No anomalies detected yet. More live history is required.</td></tr>';
-
-  anomalies.forEach(a => {
-    const row = document.createElement("tr");
-    row.className = "border-b border-surface-container-low";
-    row.innerHTML = `
-      <td class="p-3 text-sm">${new Date(a.timestamp).toLocaleString()}</td>
-      <td class="p-3 text-sm font-medium">${a.stationId}</td>
-      <td class="p-3 text-sm">${a.sensor}</td>
-      <td class="p-3 text-sm">${a.severity}</td>
-      <td class="p-3 text-sm">${a.anomalyType}</td>
-      <td class="p-3 text-sm">${(a.confidence * 100).toFixed(1)}%</td>
-      <td class="p-3 text-sm">${a.status}</td>
-      <td class="p-3 text-sm"><button class="text-primary text-xs" data-anomaly="${a.id}">Details</button></td>`;
-    row.querySelector("[data-anomaly]").addEventListener("click", () => alert(a.evidence));
-    tbody.appendChild(row);
-  });
-}
-
 import { initNavigation } from "./ui/navigation.js";
 import { initOverview } from "./ui/overview.js";
 import { initStations } from "./ui/stations.js";
 import { initAnomalies } from "./ui/anomalies.js";
+
+function initTheme() {
+  // Theme toggle via menu
+  const themeBtn = document.getElementById("themeBtn");
+  const themeMenu = document.getElementById("themeMenu");
+
+  if (themeBtn && themeMenu) {
+    themeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      themeMenu.classList.toggle("active");
+    });
+
+    themeMenu.querySelectorAll("[data-theme-choice]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const choice = e.target.dataset.themeChoice;
+        localStorage.setItem("sentinel-theme", choice);
+        applyTheme(choice);
+        themeMenu.classList.remove("active");
+        themeMenu.querySelectorAll("button").forEach(b => b.classList.remove("selected"));
+        e.target.classList.add("selected");
+      });
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener("click", () => themeMenu.classList.remove("active"));
+  }
+}
+
+function applyTheme(choice) {
+  let theme = choice;
+  if (choice === "system") {
+    theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  if (theme === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  window.dispatchEvent(new Event("themeChanged"));
+}
 
 async function initUI() {
   await initMap("mapContainer");
@@ -51,36 +54,82 @@ async function initUI() {
   initStations();
   initAnomalies();
 
+  // Connection status display
   store.subscribe(state => {
     const statusText = document.getElementById("statusText");
     const statusDot = document.getElementById("statusDot");
-    
+
     if (statusText && statusDot) {
-      if (state.mode === "LOADING") {
-        statusText.textContent = "Connecting";
-        statusDot.className = "dot connecting";
-      } else if (state.mode === "ERROR" || state.mode === "OFFLINE") {
-        statusText.textContent = "Error";
-        statusDot.className = "dot error";
-      } else if (state.mode === "DEGRADED") {
-        statusText.textContent = "Degraded";
-        statusDot.className = "dot warning";
-      } else {
-        statusText.textContent = "Connected";
-        statusDot.className = "dot connected";
+      switch (state.mode) {
+        case "LOADING":
+          statusText.textContent = "Connecting";
+          statusDot.className = "dot connecting";
+          break;
+        case "CONNECTED":
+          statusText.textContent = "Connected";
+          statusDot.className = "dot";
+          statusDot.style.background = "var(--success)";
+          break;
+        case "DEGRADED":
+          statusText.textContent = "Degraded";
+          statusDot.className = "dot";
+          statusDot.style.background = "var(--warning)";
+          break;
+        case "ERROR":
+          statusText.textContent = "Error";
+          statusDot.className = "dot error";
+          statusDot.style.background = "";
+          break;
+        case "OFFLINE":
+          statusText.textContent = "Offline";
+          statusDot.className = "dot error";
+          statusDot.style.background = "";
+          break;
+        case "CACHED":
+          statusText.textContent = "Cached";
+          statusDot.className = "dot";
+          statusDot.style.background = "var(--accent)";
+          break;
+        case "DEMO":
+          statusText.textContent = "Demo";
+          statusDot.className = "dot demo";
+          statusDot.style.background = "";
+          break;
+        default:
+          statusText.textContent = "Unknown";
+          statusDot.className = "dot connecting";
       }
     }
-
-    const count = document.getElementById("kpi-anomalies");
-    if (count) count.textContent = String(state.anomalies.length);
-
-    renderInvestigationTable(state.anomalies);
   });
+
+  // Search overlay
+  const searchBtn = document.getElementById("searchBtn");
+  const searchOverlay = document.getElementById("searchOverlay");
+  const searchInput = document.getElementById("searchInput");
+
+  if (searchBtn && searchOverlay) {
+    searchBtn.addEventListener("click", () => {
+      searchOverlay.classList.add("active");
+      searchInput?.focus();
+    });
+    searchOverlay.addEventListener("click", (e) => {
+      if (e.target === searchOverlay) searchOverlay.classList.remove("active");
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") searchOverlay.classList.remove("active");
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchOverlay.classList.add("active");
+        searchInput?.focus();
+      }
+    });
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
-  
+
+  // Fetch public config (map key, etc.)
   try {
     const configRes = await fetch("/api/config/public");
     if (configRes.ok) {
@@ -95,42 +144,56 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await initUI();
 
-  // 1. Load persisted history into memory
+  // Load persisted history into memory
   try {
     const saved = localStorage.getItem("aws-history-v1");
     if (saved) {
-      store.state.history = JSON.parse(saved);
-      // Trigger a render so charts display immediately
-      store.notify();
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object") {
+        store.state.history = parsed;
+        store.notify();
+      }
     }
   } catch {}
 
-  // 2. Initial fetch
-  store.fetchLiveData().catch(err => console.error("Initial live fetch failed:", err));
+  // Initial fetch
+  console.log("[App] Starting initial live data fetch...");
+  store.fetchLiveData().catch(err => console.error("[App] Initial live fetch failed:", err));
 
-  // Polling engine
+  // Polling engine — single instance, checks elapsed time
+  const POLL_CHECK_INTERVAL = 1000; // Check every second
   setInterval(() => {
-    // Notify subscribers periodically (e.g. for relative timestamps and countdowns)
+    // Notify subscribers periodically (for relative timestamps and countdowns)
     window.dispatchEvent(new Event("tick"));
 
     if (store.state.mode === "LOADING") return;
-    
+
     if (store.state.lastSync) {
       const msSince = Date.now() - new Date(store.state.lastSync).getTime();
-      const interval = window.__demoFastPolling ? 5000 : store.state.settings.refreshInterval * 1000;
-      if (msSince >= interval) {
-        store.fetchLiveData().catch(err => console.error("Live refresh failed:", err));
+      const intervalMs = store.state.settings.refreshInterval * 1000;
+      if (msSince >= intervalMs) {
+        console.log("[App] Polling triggered — fetching live data...");
+        store.fetchLiveData().catch(err => console.error("[App] Live refresh failed:", err));
       }
     }
-  }, 1000);
+  }, POLL_CHECK_INTERVAL);
 
   // Manual refresh wiring
   const refreshBtn = document.getElementById("refreshBtn");
   if (refreshBtn) {
     refreshBtn.addEventListener("click", () => {
-      if (store.state.mode !== "LOADING") {
-        store.fetchLiveData();
-      }
+      if (store.state.mode === "LOADING") return;
+      refreshBtn.textContent = "Refreshing...";
+      refreshBtn.disabled = true;
+      store.fetchLiveData()
+        .then(() => {
+          refreshBtn.textContent = "Refresh";
+          refreshBtn.disabled = false;
+        })
+        .catch(() => {
+          refreshBtn.textContent = "Refresh";
+          refreshBtn.disabled = false;
+        });
     });
   }
 });

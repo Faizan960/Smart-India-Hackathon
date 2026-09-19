@@ -13,15 +13,23 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
-  if (req.url.startsWith("/api/weather/current")) {
-    // Emulate Vercel function
+  const urlPath = req.url.split("?")[0];
+
+  // API routes — emulate Vercel serverless functions
+  if (urlPath === "/api/weather/current") {
     req.query = Object.fromEntries(new URLSearchParams(req.url.split("?")[1]));
     const handler = require("./api/weather/current.js");
     return handler(req, res);
   }
 
+  if (urlPath === "/api/config/public") {
+    req.query = Object.fromEntries(new URLSearchParams(req.url.split("?")[1]));
+    const handler = require("./api/config/public.js");
+    return handler(req, res);
+  }
+
   // Static file serving
-  let filePath = "." + req.url.split("?")[0];
+  let filePath = "." + urlPath;
   if (filePath === "./") filePath = "./index.html";
 
   const extname = path.extname(filePath);
@@ -42,4 +50,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`Test server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`AWS Sentinel dev server running at http://localhost:${PORT}`));
