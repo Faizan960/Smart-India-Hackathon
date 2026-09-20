@@ -6,6 +6,19 @@ let currentFilter = "";
 export function initStations() {
   store.subscribe(renderStations);
 
+  // Re-populate the detail panel whenever store state changes
+  // (e.g. after historical data arrives asynchronously)
+  store.subscribe((state) => {
+    const detailView = document.getElementById("stationDetailView");
+    if (!detailView || detailView.style.display === "none") return;
+    const stationId = state.selectedStationId;
+    if (!stationId) return;
+    const liveStation = state.stations.find(s => s.id === stationId);
+    const registry = STATIONS.find(s => s.id === stationId);
+    const station = liveStation || registry;
+    if (station) populateStationDetail(station);
+  });
+
   const searchInput = document.getElementById("stationListSearch");
   if (searchInput) {
     searchInput.addEventListener("input", (e) => {
@@ -166,9 +179,9 @@ function populateStationDetail(station) {
   }
 
   // Source
-  const hasHistory = historySeries.length > 100; // If we loaded 30 days of history, we'll have hundreds of points
+  const hasHistory = historySeries.length > 100;
   if (station.provider === "OpenWeatherMap") {
-    document.getElementById("stationSource").textContent = hasHistory ? "OpenWeatherMap Historical + Live" : "Live OpenWeatherMap";
+    document.getElementById("stationSource").textContent = hasHistory ? "Open-Meteo Historical + Live OWM" : "Live OpenWeatherMap";
   } else {
     document.getElementById("stationSource").textContent = station.provider || "Unknown";
   }
