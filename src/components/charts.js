@@ -43,7 +43,11 @@ function ensureChart() {
         legend: { labels: { color: themeColors().text } },
         tooltip: {
           callbacks: {
-            title: function(items) { return items[0]?.label || ""; },
+            title: function(items) { 
+              const val = items[0]?.parsed?.x;
+              if (val) return new Date(val * 1000).toLocaleString("en-IN");
+              return items[0]?.label || ""; 
+            },
             label: function(item) {
               return `${item.dataset.label}: ${item.parsed.y?.toFixed(1)}°C`;
             }
@@ -52,7 +56,14 @@ function ensureChart() {
       },
       scales: {
         x: {
-          ticks: { color: themeColors().text, maxTicksLimit: 12 },
+          type: "linear",
+          ticks: { 
+            color: themeColors().text, 
+            maxTicksLimit: 12,
+            callback: function(value) {
+              return new Date(value * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+            }
+          },
           grid: { color: themeColors().grid }
         },
         y: {
@@ -171,6 +182,10 @@ function renderChart(state) {
     debugEl.textContent = diagLines.join("\n");
   }
 
+  // Enforce x-axis time window anchored to NOW
+  chart.options.scales.x.min = cutoff;
+  chart.options.scales.x.max = nowEpoch;
+
   if (points.length === 0) {
     if (subtitle) subtitle.textContent = allPoints.length === 0
       ? "No observations collected yet"
@@ -181,22 +196,22 @@ function renderChart(state) {
   } else if (points.length === 1) {
     if (subtitle) subtitle.textContent = "Collecting observations... (1 point)";
     const epoch = getPointEpoch(points[0]);
-    chart.data.labels = [new Date(epoch * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })];
-    chart.data.datasets[0].data = [points[0].temperature];
-    chart.data.datasets[1].data = [points[0].temperature];
+    chart.data.datasets[0].data = [{ x: epoch, y: points[0].temperature }];
+    chart.data.datasets[1].data = [{ x: epoch, y: points[0].temperature }];
   } else {
     if (subtitle) subtitle.textContent = `${points.length} observations — ${rangeLabel}`;
-    chart.data.labels = points.map(p => {
-      const epoch = getPointEpoch(p);
-      return new Date(epoch * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-    });
-    chart.data.datasets[0].data = points.map(p => p.temperature);
+    
+    const chartData = points.map(p => ({
+      x: getPointEpoch(p),
+      y: p.temperature
+    }));
+    chart.data.datasets[0].data = chartData;
 
     // Calculate baseline (mean of all points in window)
     const values = points.map(p => p.temperature).filter(Number.isFinite);
     if (values.length >= 6) {
       const baseline = values.reduce((a,b) => a+b, 0) / values.length;
-      chart.data.datasets[1].data = values.map(() => baseline);
+      chart.data.datasets[1].data = chartData.map(p => ({ x: p.x, y: baseline }));
       chart.data.datasets[1].label = `Baseline (${baseline.toFixed(1)}°C)`;
     } else {
       chart.data.datasets[1].data = [];
