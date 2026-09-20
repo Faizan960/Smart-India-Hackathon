@@ -12,3 +12,5 @@ node_modules/
 
 # Local frontend config
 src/config.local.js
+
+.vercel

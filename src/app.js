@@ -196,4 +196,54 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     });
   }
+  
+  // Wire up Demo UI
+  const demoPanel = document.getElementById("demoControlPanel");
+  const injectBtn = document.getElementById("injectDemoBtn");
+  const resetBtn = document.getElementById("resetDemoBtn");
+  const stationSel = document.getElementById("demoStationSelect");
+  const scenarioSel = document.getElementById("demoScenarioSelect");
+  
+  // Expose a global way to enable demo mode for testing without console
+  window.enableDemoMode = () => {
+    window.__demoMode = true;
+    if (demoPanel) demoPanel.style.display = 'flex';
+  };
+  
+  // You can automatically show demo UI if we are in Demo mode (or always show it for SIH)
+  // For the SIH judging, we want it available. We can just show it.
+  window.enableDemoMode();
+
+  if (injectBtn) {
+    injectBtn.addEventListener("click", () => {
+      window.__demoFaultInjectionEnabled = true;
+      window.__demoStationId = stationSel.value;
+      window.__demoFaultType = scenarioSel.value;
+      if (scenarioSel.value === "SENSOR_FREEZE") {
+          const current = store.state.stations.find(s => s.id === stationSel.value);
+          window.__demoFreezeValue = current ? current.temperature : 25.0;
+      }
+      window.__demoDriftAccumulator = 0;
+      
+      console.log(`[Demo] Scheduled injection: ${scenarioSel.value} on ${stationSel.value}`);
+      // Force an immediate refresh to apply the anomaly
+      store.fetchLiveData();
+    });
+  }
+  
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      window.__demoFaultInjectionEnabled = false;
+      window.__demoStationId = null;
+      window.__demoFaultType = null;
+      window.__demoFreezeValue = null;
+      window.__demoDriftAccumulator = 0;
+      
+      console.log("[Demo] Resetting anomalies...");
+      // Optional: clear local anomaly history for the UI
+      store.state.anomalies = store.state.anomalies.filter(a => !a.isSynthetic);
+      store.notify();
+      store.fetchLiveData();
+    });
+  }
 });

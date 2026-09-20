@@ -10,9 +10,11 @@ The application is a lightweight ES-module-based frontend backed by Vercel Serve
 
 ## Requirements
 The frontend requires no package manager dependencies to build (native ES modules).
-The Python pipeline requires minimal dependencies:
+The Python pipeline requires dependencies for the ML engine:
 - `numpy`
 - `pandas`
+- `scikit-learn`
+- `joblib`
 
 ## Local Setup
 Clone the repository and set up your Python environment:
@@ -60,17 +62,31 @@ The application uses OpenWeatherMap to fetch real-time weather telemetry.
 - The frontend will gracefully fall back to local `CACHED` mode if the API is unreachable.
 - The original IMD integration is preserved and can be used in the future by changing the provider in the configuration.
 
-## Demo Mode
-A deterministic synthetic demo pipeline is kept separately available for development and evaluation when real telemetry is unavailable. It must always show **DEMO DATA** and never **LIVE**.
+## ML Architecture & Anomaly Detection
+AWS Sentinel uses an unsupervised **Isolation Forest** model trained on healthy synthetic weather telemetry to identify abnormal station observations. 
 
-## Anomaly Detection
-The anomaly detection engine waits until sufficient real observations (>= 6) are collected before generating a statistical baseline. It will not force anomalies onto live data.
+**Data Flow:**
+1. **Healthy synthetic historical data** is generated (with diurnal cycles and appropriate noise).
+2. **Feature engineering** extracts temporal features (`hour_sin`, `hour_cos`) and rolling statistical features (means, standard deviations).
+3. A **StandardScaler** scales the features.
+4. An **Isolation Forest** is trained to learn the boundaries of normal telemetry and exported to `ml/models/`.
+5. **Inference API**: A Vercel Python Serverless Function (`/api/inference`) receives real-time telemetry history from the frontend.
+6. **Fault Classification**: If the model detects an anomaly, a deterministic classifier assigns a specific fault type (e.g., `TEMPERATURE_SPIKE`, `SENSOR_FREEZE`).
 
-## Running the Python Pipeline
+*Note: The prototype includes controlled fault injection to demonstrate detection and classification of common AWS sensor failure patterns. The model is NOT trained on nationwide IMD historical data and is currently a proof-of-concept for SIH.*
+
+## Demo Mode (Anomaly Injection)
+For SIH judging and evaluation, a **Demo Control Panel** is integrated into the frontend. 
+This allows injecting synthetic faults into the telemetry pipeline.
+- It is clearly separated from live data and labeled as **DEMO DATA / CONTROLLED SIMULATION**.
+- The injected anomaly modifies the raw observation and is routed through the **exact same ML inference path** as real data.
+- The UI features a `RESET DEMO` button to clear injected faults and resume normal behavior.
+
+## Running the ML Training Pipeline
 ```bash
-python pipeline.py
+python ml/train.py
 ```
-This generates synthetic streams, evaluates the hybrid anomaly detectors, and exports evaluation metrics.
+This generates the synthetic healthy dataset, fits the scaler and Isolation Forest, and saves the `.joblib` artifacts for inference.
 
 ## Running the Web Application
 The web app is optimized for Vercel. 

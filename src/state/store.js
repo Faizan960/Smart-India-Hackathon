@@ -103,11 +103,10 @@ export const store = {
     }
   },
 
-  detectAnomalies(station) {
+  runHeuristicDetection(station, series) {
     if (!station || station.temperature === null) return [];
-    log("Anomaly", `evaluation requested for ${station.id}`);
+    log("Anomaly", `heuristic evaluation requested for ${station.id}`);
 
-    const series = this.state.history[station.id] || [];
     const previous = series
       .slice(0, -1)
       .map((p) => p.temperature)
@@ -303,6 +302,50 @@ export const store = {
     return anomalies;
   },
 
+  async runMLInference(station) {
+    if (!station || station.temperature === null) return [];
+    const series = this.state.history[station.id] || [];
+    if (series.length < 6) return []; // Need history for features
+
+    try {
+      const response = await fetch('/api/inference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: series })
+      });
+      if (!response.ok) throw new Error('ML API failed');
+      const result = await response.json();
+      
+      if (result.is_anomaly) {
+        const severity = result.anomaly_score > 0.8 ? "CRITICAL" : "WARNING";
+        return [{
+            id: `${station.id}-ml-${Date.now()}`,
+            stationId: station.id,
+            stationName: station.station || station.id,
+            sensor: "Multiple",
+            anomalyType: result.fault_type,
+            severity: severity,
+            observed: station.temperature,
+            expected: "Baseline",
+            deviation: 0,
+            confidence: result.confidence || result.anomaly_score,
+            timestamp: station.timestamp || station.observedAt,
+            temporalEvidence: `ML Score: ${result.anomaly_score.toFixed(2)}`,
+            multivariateEvidence: "Isolation Forest Model",
+            spatialEvidence: "N/A",
+            likelyCause: result.fault_type,
+            evidence: `ML model detected an anomaly with score ${result.anomaly_score.toFixed(2)}. Classified as ${result.fault_type}.`,
+            status: "NEW",
+            isSynthetic: station.isSynthetic || false
+        }];
+      }
+      return [];
+    } catch (err) {
+      log("ML", "Fallback to heuristic detection: " + err.message);
+      return this.runHeuristicDetection(station, series);
+    }
+  },
+
   async fetchLiveData() {
     // Prevent overlapping requests
     if (this._fetchInProgress) {
@@ -346,14 +389,23 @@ export const store = {
 
             // Demo fault injection logic
             if (window.__demoFaultInjectionEnabled && payload?.data?.main) {
-              if (registryStation.id === "DL-001") {
-                const faultType = window.__demoFaultType || "SPIKE";
-                if (faultType === "SPIKE") payload.data.main.temp += 20.0;
-                if (faultType === "DROP") payload.data.main.temp -= 20.0;
-                if (faultType === "FREEZE") payload.data.main.temp = window.__demoFreezeValue || payload.data.main.temp;
-                if (faultType === "DRIFT") payload.data.main.temp += 5.0;
+              const targetStation = window.__demoStationId || "DL-001";
+              if (registryStation.id === targetStation) {
+                const faultType = window.__demoFaultType || "TEMPERATURE_SPIKE";
+                if (faultType === "TEMPERATURE_SPIKE") payload.data.main.temp += 20.0;
+                if (faultType === "TEMPERATURE_DROP") payload.data.main.temp -= 20.0;
+                if (faultType === "SENSOR_FREEZE") payload.data.main.temp = window.__demoFreezeValue || payload.data.main.temp;
+                if (faultType === "SENSOR_DRIFT") {
+                    window.__demoDriftAccumulator = (window.__demoDriftAccumulator || 0) + 1.5;
+                    payload.data.main.temp += window.__demoDriftAccumulator;
+                }
+                if (faultType === "PRESSURE_SPIKE") payload.data.main.pressure += 50;
+                if (faultType === "HUMIDITY_SPIKE") payload.data.main.humidity = Math.min(100, payload.data.main.humidity + 40);
+                if (faultType === "SENSOR_DROPOUT") {
+                    payload.data.main.temp = null;
+                    payload.data.main.humidity = null;
+                }
                 log("API", `DEMO FAULT INJECTED: ${faultType} on ${registryStation.id}`);
-                // Mark as synthetic
                 payload._isSynthetic = true;
               }
             }
@@ -410,12 +462,12 @@ export const store = {
       this.state.lastSync = new Date().toISOString();
 
       let allAnomalies = [];
-      liveStations.forEach(station => {
+      for (const station of liveStations) {
         this.appendHistory(station);
         log("Store", `station updated: ${station.id}`);
-        const stationAnomalies = this.detectAnomalies(station);
+        const stationAnomalies = await this.runMLInference(station);
         allAnomalies = allAnomalies.concat(stationAnomalies);
-      });
+      }
       this.state.anomalies = allAnomalies;
 
       try {
@@ -441,9 +493,9 @@ export const store = {
         this.state.lastSync = cached.savedAt || null;
 
         let allAnomalies = [];
-        this.state.stations.forEach(station => {
-          allAnomalies = allAnomalies.concat(this.detectAnomalies(station));
-        });
+        for (const station of this.state.stations) {
+          allAnomalies = allAnomalies.concat(await this.runMLInference(station));
+        }
         this.state.anomalies = allAnomalies;
 
         this.setMode("CACHED");
@@ -461,9 +513,9 @@ export const store = {
       this.state.lastSync = new Date().toISOString();
 
       let allAnomalies = [];
-      this.state.stations.forEach(station => {
-        allAnomalies = allAnomalies.concat(this.detectAnomalies(station));
-      });
+      for (const station of this.state.stations) {
+        allAnomalies = allAnomalies.concat(await this.runMLInference(station));
+      }
       this.state.anomalies = allAnomalies;
 
       this.setMode("DEMO");

@@ -1005,6 +1005,32 @@
                         <button class="refresh-btn" id="refreshBtn">Refresh</button>
                     </div>
                 </div>
+                
+                <!-- ── Demo Control Panel ── -->
+                <div class="demo-control-panel" id="demoControlPanel" style="display: none; background: rgba(255,159,10,0.1); border: 1px solid var(--warning); border-radius: 12px; padding: 16px; margin-bottom: 32px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <h3 style="font-size: 14px; font-weight: 600; color: var(--warning); margin-bottom: 4px;">DEMO DATA / CONTROLLED SIMULATION</h3>
+                        <p style="font-size: 13px; color: var(--text-secondary);">Inject synthetic faults to evaluate the ML pipeline.</p>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <select id="demoStationSelect" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--separator); background: var(--surface); font-size: 13px; color: var(--text-primary); outline: none;">
+                            <option value="DL-001">DL-001 (New Delhi)</option>
+                            <option value="MH-001">MH-001 (Mumbai)</option>
+                            <option value="MH-002">MH-002 (Pune)</option>
+                        </select>
+                        <select id="demoScenarioSelect" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--separator); background: var(--surface); font-size: 13px; color: var(--text-primary); outline: none;">
+                            <option value="TEMPERATURE_SPIKE">Temperature Spike</option>
+                            <option value="TEMPERATURE_DROP">Temperature Drop</option>
+                            <option value="SENSOR_FREEZE">Sensor Freeze</option>
+                            <option value="SENSOR_DRIFT">Sensor Drift</option>
+                            <option value="PRESSURE_SPIKE">Pressure Spike</option>
+                            <option value="HUMIDITY_SPIKE">Humidity Spike</option>
+                            <option value="SENSOR_DROPOUT">Sensor Dropout</option>
+                        </select>
+                        <button id="injectDemoBtn" style="padding: 8px 16px; border: none; border-radius: 8px; background: var(--warning); color: #000; font-weight: 600; font-size: 13px; cursor: pointer;">INJECT ANOMALY</button>
+                        <button id="resetDemoBtn" style="padding: 8px 16px; border: 1px solid var(--warning); border-radius: 8px; background: transparent; color: var(--warning); font-weight: 600; font-size: 13px; cursor: pointer;">RESET DEMO</button>
+                    </div>
+                </div>
 
                 <!-- KPI Strip -->
                 <div class="kpi-strip" id="kpiStrip">
