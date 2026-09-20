@@ -1,106 +1,103 @@
-# AWS Sentinel
+# AWS Sentinel — SIH 26073
 
-## SIH26073
-Working MVP for "AI/ML-Based Intelligent Anomaly Detection for Automatic Weather Stations (AWS)" — Ministry of Earth Sciences.
+**AI/ML-Based Intelligent Anomaly Detection for Automatic Weather Stations**
 
-## Architecture
-The application is a lightweight ES-module-based frontend backed by Vercel Serverless functions.
-- **UI ↓ Store ↓ Provider ↓ Backend API**
-- The UI contains no business logic for data fetching. It subscribes to the central store.
+AWS Sentinel is an advanced telemetry monitoring and anomaly detection dashboard designed for Automatic Weather Stations (AWS). It continuously ingests meteorological data, visually tracks climate patterns over 30 days, and utilizes an AI/ML inference pipeline to detect sensor faults and climatic anomalies in real-time. 
 
-## Requirements
-The frontend requires no package manager dependencies to build (native ES modules).
-The Python pipeline requires dependencies for the ML engine:
-- `numpy`
-- `pandas`
-- `scikit-learn`
-- `joblib`
+Built for the **Smart India Hackathon (SIH 2026)**.
 
-## Local Setup
-Clone the repository and set up your Python environment:
-### Windows
-```powershell
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-### Linux/macOS
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+---
 
-## Environment Variables
-Create a `.env.local` file in the root of the project:
+## 🏗 Architecture Overview
+
+The system is designed around a decoupled, serverless architecture optimized for edge-rendering and stateless ML inference.
+
+### 1. Frontend (Vanilla JS / Edge)
+- **Zero-Dependency Core**: Built with pure HTML, CSS, and Vanilla JavaScript for maximum performance and minimal overhead. No heavy frameworks (React/Vue/Angular) are used.
+- **Reactive State Management**: Uses a custom Pub/Sub `store.js` that acts as the single source of truth, managing live polling, historical caching, and ML synchronization.
+- **Dynamic Visualization**: Uses `Chart.js` with a linear time-scale dynamically anchored to the current client time, allowing seamless transitions between 24-hour, 7-day, and 30-day temporal windows.
+
+### 2. Data Pipeline & Telemetry Fusion
+The platform intelligently merges two distinct data sources into a unified monotonic timeline:
+- **30-Day Historical Data (Open-Meteo)**: The backend securely proxies the free Open-Meteo Archive API to fetch the last 744 hours (30 days) of real meteorological data for the selected station. This is cached in the browser's `localStorage` for 2 hours to optimize API quotas.
+- **Live Polling (OpenWeatherMap)**: The frontend polls the OWM API periodically. 
+- **Time-Series Deduplication**: Upstream providers often cache their data (e.g., OWM `dt` field updates slowly). To prevent collapsing the time-series, the system deduplicates and anchors observations using a monotonic `receivedEpoch` while preserving the original `observedEpoch`.
+
+### 3. AI/ML Inference Engine (Python Serverless)
+- **Model**: Scikit-Learn `IsolationForest` (Unsupervised Anomaly Detection).
+- **Inference Environment**: Vercel Python 3.12 Serverless Functions (`/api/inference`).
+- **Feature Engineering**: The pipeline receives a rolling window of recent telemetry (last 24 points). It computes moving averages, standard deviations, and temporal derivatives (e.g., sudden temperature spikes, unnatural humidity drops) before passing them to a `StandardScaler`.
+- **Fault Classification**: Anomalies flagged by the Isolation Forest are categorized into specific fault types (e.g., `SENSOR_STUCK`, `NOISE_SPIKE`, `UNKNOWN_ANOMALY`) based on secondary threshold heuristics.
+
+---
+
+## 🛠 Technical Stack
+
+### **Frontend**
+- HTML5, CSS3 (CSS Variables for Dark/Light theme switching)
+- Vanilla JavaScript (ES6+)
+- Chart.js (Data Visualization)
+
+### **Backend / API (Vercel)**
+- Node.js (`/api/weather/history`, `/api/weather/current`)
+- Python 3.12 (`/api/inference`)
+
+### **Machine Learning**
+- Scikit-Learn 1.7.2
+- Pandas 2.3.3
+- NumPy 2.3.5
+- Joblib 1.5.2
+
+---
+
+## 🚀 Key Features
+
+* **Unified Telemetry Graphing**: Seamlessly visualizes real 30-day historical data alongside live-polled data without arbitrary timeline shifts.
+* **Stateless ML Pipeline**: The frontend strictly limits payloads (sending only the trailing 24 data points) to protect the Vercel Python endpoint from massive historical arrays, keeping compute times < 200ms.
+* **Fault Injection Engine (Demo Mode)**: Includes a built-in anomaly injection UI. Presenters can inject synthetic data (e.g., an instant +15°C temperature spike) directly into the live data stream to visually demonstrate the ML model catching and classifying the fault in real time.
+* **Graceful Degradation**: If the ML API goes down or times out, the system automatically falls back to an offline Z-score heuristic detector, ensuring the dashboard never stops monitoring.
+
+---
+
+## ⚙️ Local Development
+
+### 1. Prerequisites
+- Node.js (v18+)
+- Python (Strictly **3.12** for Vercel ABI compatibility)
+- Vercel CLI (`npm i -g vercel`)
+
+### 2. Environment Setup
+Create a `.env.local` file in the root directory:
 ```env
 WEATHER_PROVIDER=openweathermap
-OPENWEATHERMAP_API_KEY=YOUR_KEY_HERE
+OPENWEATHERMAP_API_KEY=your_owm_api_key
 ```
-> [!CAUTION]
-> **Never commit your `.env.local` file.**
 
-For the map frontend, create a `src/config.local.js` file:
-```js
-export const LOCAL_CONFIG = {
-  CARTO_BASEMAP_KEY: "YOUR_CARTO_KEY_HERE"
-};
-```
-> [!CAUTION]
-> **Never commit your `src/config.local.js` file.**
-
-The project uses two separate credentials:
-1. **OPENWEATHERMAP_API_KEY**: Used strictly on the backend to fetch live telemetry. It is securely kept on the server (`.env.local`) and never exposed to the frontend.
-2. **CARTO_BASEMAP_KEY**: Used to authenticate the CARTO map tiles (Voyager and Dark Matter). The frontend retrieves this configuration via the ignored `src/config.local.js`.
-
-For Vercel deployment:
-Go to **Project → Settings → Environment Variables** and add `WEATHER_PROVIDER` and `OPENWEATHERMAP_API_KEY`. (CARTO configuration must be injected into the static build or handled accordingly for production, but locally uses `config.local.js`).
-
-## Live Weather Provider
-The application uses OpenWeatherMap to fetch real-time weather telemetry. 
-- The credential is only accessed server-side via the Vercel function `/api/weather/current`.
-- The frontend will gracefully fall back to local `CACHED` mode if the API is unreachable.
-- The original IMD integration is preserved and can be used in the future by changing the provider in the configuration.
-
-## ML Architecture & Anomaly Detection
-AWS Sentinel uses an unsupervised **Isolation Forest** model trained on healthy synthetic weather telemetry to identify abnormal station observations. 
-
-**Data Flow:**
-1. **Healthy synthetic historical data** is generated (with diurnal cycles and appropriate noise).
-2. **Feature engineering** extracts temporal features (`hour_sin`, `hour_cos`) and rolling statistical features (means, standard deviations).
-3. A **StandardScaler** scales the features.
-4. An **Isolation Forest** is trained to learn the boundaries of normal telemetry and exported to `ml/models/`.
-5. **Inference API**: A Vercel Python Serverless Function (`/api/inference`) receives real-time telemetry history from the frontend.
-6. **Fault Classification**: If the model detects an anomaly, a deterministic classifier assigns a specific fault type (e.g., `TEMPERATURE_SPIKE`, `SENSOR_FREEZE`).
-
-*Note: The prototype includes controlled fault injection to demonstrate detection and classification of common AWS sensor failure patterns. The model is NOT trained on nationwide IMD historical data and is currently a proof-of-concept for SIH.*
-
-## Demo Mode (Anomaly Injection)
-For SIH judging and evaluation, a **Demo Control Panel** is integrated into the frontend. 
-This allows injecting synthetic faults into the telemetry pipeline.
-- It is clearly separated from live data and labeled as **DEMO DATA / CONTROLLED SIMULATION**.
-- The injected anomaly modifies the raw observation and is routed through the **exact same ML inference path** as real data.
-- The UI features a `RESET DEMO` button to clear injected faults and resume normal behavior.
-
-## Running the ML Training Pipeline
+### 3. Run Locally
+Use the Vercel CLI to boot both the Node.js frontend/proxy and the Python ML backend simultaneously:
 ```bash
-python ml/train.py
+vercel dev
 ```
-This generates the synthetic healthy dataset, fits the scaler and Isolation Forest, and saves the `.joblib` artifacts for inference.
 
-## Running the Web Application
-The web app is optimized for Vercel. 
-If you have the Vercel CLI installed (`npm install -g vercel`), simply run:
-```bash
-npm run dev
-```
-(Or run `vercel dev` directly). 
-This will spin up a local development server on port 3000 and run the serverless API proxy.
+### 4. Machine Learning Modification
+If you wish to retrain the models:
+1. Navigate to the `/ml` directory.
+2. Ensure you train your models using a Pandas DataFrame so that `StandardScaler` saves `feature_names_in_`.
+3. Save your outputs (`scaler.joblib` and `isolation_forest.joblib`) to the `ml/models/` directory.
 
-## Security
-- The `.gitignore` protects all environment files.
-- No secrets are exposed to the browser.
-- The API key is securely routed through the Vercel proxy.
+---
 
-## Current Limitations
-- Historical data is collected locally in the browser (up to 1440 points). The application does not pull historical time-series data from the live API.
+## ☁️ Deployment
+
+The project is configured for one-click deployment on **Vercel**.
+
+1. Connect the repository to Vercel.
+2. In the Vercel dashboard, navigate to **Settings > Environment Variables**.
+3. Add `OPENWEATHERMAP_API_KEY` for **Production** and **Preview** environments.
+4. Deploy!
+
+*(Note: Vercel automatically detects the `.python-version` file and provisions a Python 3.12 runtime environment, resolving NumPy/Pandas C-extension compilation issues).*
+
+---
+
+*Built by [AWS Sentinel Team] for Smart India Hackathon 2026*
