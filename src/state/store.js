@@ -1,5 +1,5 @@
 import { getAWSStation } from "../api/imd.js";
-import { getWeatherData } from "../api/weather.js";
+import { getWeatherData, getHistoricalData } from "../api/weather.js";
 import { normalizeAWSData } from "../data/normalizer.js";
 import { STATIONS } from "../data/stations.js";
 import { getDemoData } from "../data/demoData.js";
@@ -313,11 +313,15 @@ export const store = {
     const series = this.state.history[station.id] || [];
     if (series.length < 6) return []; // Need history for features
 
+    // Only send the most recent 24 observations to avoid huge payloads.
+    // ml/features.py uses a 12-row rolling window, so 24 is safe.
+    const inferenceSeries = series.slice(-24);
+
     try {
       const response = await fetch('/api/inference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history: series })
+        body: JSON.stringify({ history: inferenceSeries })
       });
       if (!response.ok) throw new Error('ML API failed');
       const result = await response.json();
@@ -350,6 +354,82 @@ export const store = {
       log("ML", "Fallback to heuristic detection: " + err.message);
       return this.runHeuristicDetection(station, series);
     }
+  },
+
+  async loadHistoricalData(station) {
+    if (!station || !station.id) return;
+    const historyCacheKey = `weather-history-${station.id}`;
+    
+    // Check cache
+    try {
+      const cached = localStorage.getItem(historyCacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const ageHours = (Date.now() - new Date(parsed.fetchedAt).getTime()) / (1000 * 60 * 60);
+        
+        if (parsed.observations && parsed.observations.length > 0 && ageHours < 2) {
+          log("History", `Loaded ${parsed.observations.length} historical records from cache for ${station.id}`);
+          this._mergeHistoricalData(station.id, parsed.observations);
+          return;
+        }
+      }
+    } catch {}
+
+    log("History", `Fetching 30-day historical data for ${station.id}...`);
+    try {
+      const payload = await getHistoricalData(station);
+      if (payload && payload.data && payload.data.list) {
+        // OpenWeatherMap historical response has a 'list' of hourly observations
+        // map to our normalizer schema. Note: bulk API format differs slightly but we map it directly:
+        const normalized = payload.data.list.map(item => {
+          return {
+            id: station.id,
+            timestamp: new Date(item.dt * 1000).toISOString(),
+            observedEpoch: item.dt,
+            receivedEpoch: item.dt, // for historical, received is observed
+            temperature: item.main.temp,
+            humidity: item.main.humidity,
+            pressure: item.main.pressure,
+            windSpeed: item.wind?.speed ? item.wind.speed * 3.6 : 0,
+            isSynthetic: false
+          };
+        });
+
+        // Cache it
+        try {
+          localStorage.setItem(historyCacheKey, JSON.stringify({
+            fetchedAt: new Date().toISOString(),
+            observations: normalized
+          }));
+        } catch {}
+
+        this._mergeHistoricalData(station.id, normalized);
+      }
+    } catch (err) {
+      log("History", `Failed to fetch historical data for ${station.id}: ${err.message}`);
+    }
+  },
+
+  _mergeHistoricalData(stationId, historicalObservations) {
+    const series = Array.isArray(this.state.history[stationId]) ? this.state.history[stationId] : [];
+    
+    // Merge by observedEpoch
+    const merged = [...historicalObservations, ...series];
+    
+    // Deduplicate by observedEpoch (keeping the latest/live one if conflict)
+    const map = new Map();
+    for (const obs of merged) {
+       // if we already have it, and it's a live one (isSynthetic etc), we might overwrite, 
+       // but since we go chronologically (historical then live), live overwrites historical!
+       map.set(obs.observedEpoch, obs);
+    }
+    
+    // Sort chronologically
+    const finalSeries = Array.from(map.values()).sort((a, b) => a.observedEpoch - b.observedEpoch);
+    
+    // Cap at say 1440 points (actually 30 days of hourly is 720 points, so 2000 is plenty)
+    this.state.history[stationId] = finalSeries.slice(-2000);
+    this.notify();
   },
 
   async fetchLiveData() {

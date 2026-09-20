@@ -33,6 +33,14 @@ export function viewStation(stationId) {
   document.getElementById("stationListView").style.display = "none";
   document.getElementById("stationDetailView").style.display = "block";
 
+  // Check if we need to load historical data (if not already loaded)
+  const historySeries = store.state.history[stationId] || [];
+  if (historySeries.length < 24) {
+    const subtitle = document.getElementById("chartSubtitle");
+    if (subtitle) subtitle.textContent = "Loading 30-day weather history...";
+    store.loadHistoricalData(station).catch(err => console.error("History load failed", err));
+  }
+
   // Trigger chart re-render after DOM is visible
   requestAnimationFrame(() => {
     window.dispatchEvent(new CustomEvent("stationSelected", { detail: { stationId } }));
@@ -158,7 +166,12 @@ function populateStationDetail(station) {
   }
 
   // Source
-  document.getElementById("stationSource").textContent = station.provider === "OpenWeatherMap" ? "Live OpenWeatherMap" : (station.provider || "Unknown");
+  const hasHistory = historySeries.length > 100; // If we loaded 30 days of history, we'll have hundreds of points
+  if (station.provider === "OpenWeatherMap") {
+    document.getElementById("stationSource").textContent = hasHistory ? "OpenWeatherMap Historical + Live" : "Live OpenWeatherMap";
+  } else {
+    document.getElementById("stationSource").textContent = station.provider || "Unknown";
+  }
 
   // Fill sensors
   document.getElementById("sensorTemp").textContent = station.temperature !== null && station.temperature !== undefined ? station.temperature.toFixed(1) : "--";
