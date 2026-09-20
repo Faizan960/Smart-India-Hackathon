@@ -1,103 +1,778 @@
 # AWS Sentinel — SIH 26073
 
-**AI/ML-Based Intelligent Anomaly Detection for Automatic Weather Stations**
+**AI/ML-Based Intelligent Anomaly Detection for Automatic Weather Stations (AWS)**
 
-AWS Sentinel is an advanced telemetry monitoring and anomaly detection dashboard designed for Automatic Weather Stations (AWS). It continuously ingests meteorological data, visually tracks climate patterns over 30 days, and utilizes an AI/ML inference pipeline to detect sensor faults and climatic anomalies in real-time. 
+AWS Sentinel is a web-based telemetry monitoring and machine-learning anomaly detection system for Automatic Weather Stations. It combines historical and live meteorological observations with an **unsupervised Isolation Forest model**, temporal/rolling feature engineering, fault classification, anomaly injection, and real-time visualization.
 
-Built for the **Smart India Hackathon (SIH 2026)**.
-
----
-
-## 🏗 Architecture Overview
-
-The system is designed around a decoupled, serverless architecture optimized for edge-rendering and stateless ML inference.
-
-### 1. Frontend (Vanilla JS / Edge)
-- **Zero-Dependency Core**: Built with pure HTML, CSS, and Vanilla JavaScript for maximum performance and minimal overhead. No heavy frameworks (React/Vue/Angular) are used.
-- **Reactive State Management**: Uses a custom Pub/Sub `store.js` that acts as the single source of truth, managing live polling, historical caching, and ML synchronization.
-- **Dynamic Visualization**: Uses `Chart.js` with a linear time-scale dynamically anchored to the current client time, allowing seamless transitions between 24-hour, 7-day, and 30-day temporal windows.
-
-### 2. Data Pipeline & Telemetry Fusion
-The platform intelligently merges two distinct data sources into a unified monotonic timeline:
-- **30-Day Historical Data (Open-Meteo)**: The backend securely proxies the free Open-Meteo Archive API to fetch the last 744 hours (30 days) of real meteorological data for the selected station. This is cached in the browser's `localStorage` for 2 hours to optimize API quotas.
-- **Live Polling (OpenWeatherMap)**: The frontend polls the OWM API periodically. 
-- **Time-Series Deduplication**: Upstream providers often cache their data (e.g., OWM `dt` field updates slowly). To prevent collapsing the time-series, the system deduplicates and anchors observations using a monotonic `receivedEpoch` while preserving the original `observedEpoch`.
-
-### 3. AI/ML Inference Engine (Python Serverless)
-- **Model**: Scikit-Learn `IsolationForest` (Unsupervised Anomaly Detection).
-- **Inference Environment**: Vercel Python 3.12 Serverless Functions (`/api/inference`).
-- **Feature Engineering**: The pipeline receives a rolling window of recent telemetry (last 24 points). It computes moving averages, standard deviations, and temporal derivatives (e.g., sudden temperature spikes, unnatural humidity drops) before passing them to a `StandardScaler`.
-- **Fault Classification**: Anomalies flagged by the Isolation Forest are categorized into specific fault types (e.g., `SENSOR_STUCK`, `NOISE_SPIKE`, `UNKNOWN_ANOMALY`) based on secondary threshold heuristics.
+Built for **Smart India Hackathon 2026 — Problem Statement SIH26073**.
 
 ---
 
-## 🛠 Technical Stack
+## 1. Problem Statement
 
-### **Frontend**
-- HTML5, CSS3 (CSS Variables for Dark/Light theme switching)
+### SIH26073 — AI/ML-Based Intelligent Anomaly Detection for Automatic Weather Stations
+
+Automatic Weather Stations continuously produce observations such as:
+
+- Temperature
+- Relative humidity
+- Atmospheric pressure
+- Wind speed
+
+Sensor failures and abnormal telemetry can appear as:
+
+- Sudden spikes or drops
+- Frozen/stuck readings
+- Gradual sensor drift
+- Missing values / sensor dropout
+- Unusual combinations of otherwise plausible readings
+
+AWS Sentinel identifies abnormal observations and provides an ML-assisted fault classification through a serverless inference pipeline.
+
+---
+
+## 2. Current System Status
+
+This repository contains a **working MVP with an implemented ML inference pipeline**.
+
+### Currently implemented
+
+- Historical weather-data ingestion
+- Live weather-data polling
+- Unified time-series construction
+- Browser-side telemetry caching
+- Time-series deduplication
+- Rolling and temporal feature extraction
+- Scikit-Learn Isolation Forest anomaly detection
+- StandardScaler preprocessing
+- Fault-type classification
+- Controlled anomaly injection for demonstrations
+- Real-time anomaly results through a Python serverless endpoint
+- Dashboard visualization using Chart.js
+- Graceful fallback to a Z-score detector when the ML endpoint is unavailable
+
+### Current ML training approach
+
+The current model is **unsupervised Isolation Forest**.
+
+Training currently:
+
+1. Generates deterministic healthy telemetry for a representative station.
+2. Extracts temporal and rolling statistical features.
+3. Handles incomplete feature values.
+4. Fits a StandardScaler.
+5. Trains an IsolationForest.
+6. Saves the scaler and model with Joblib.
+7. The serverless inference API loads those artifacts and scores incoming observations.
+
+The current training dataset is **synthetic healthy telemetry** used to establish a reproducible normal-behaviour baseline for the prototype.
+
+The project does **not** claim to be trained on a large labelled national IMD AWS dataset. The architecture is designed so real historical AWS data can replace or augment the prototype training data later.
+
+---
+
+## 3. High-Level Architecture
+
+~~~text
+                 HISTORICAL DATA
+                 Open-Meteo
+                      |
+                      v
+              +----------------+
+              | Data Pipeline  |
+              +-------+--------+
+                      |
+LIVE DATA             v
+OpenWeatherMap --> Unified Telemetry
+                      |
+                      v
+              +-------------------+
+              | Feature Extraction|
+              +---------+---------+
+                        |
+                        v
+              +-------------------+
+              | StandardScaler    |
+              +---------+---------+
+                        |
+                        v
+              +-------------------+
+              | Isolation Forest  |
+              | ML Anomaly Model  |
+              +---------+---------+
+                        |
+                        v
+              +-------------------+
+              | Fault Classifier  |
+              +---------+---------+
+                        |
+                        v
+       +----------------+----------------+
+       |                                 |
+       v                                 v
+ Anomaly Score                    Fault Type / Confidence
+       |                                 |
+       +----------------+----------------+
+                        |
+                        v
+                 Web Dashboard
+                        |
+                        v
+              Controlled Fault Injection
+~~~
+
+---
+
+## 4. Frontend
+
+The frontend is intentionally lightweight.
+
+### Technologies
+
+- HTML5
+- CSS3
 - Vanilla JavaScript (ES6+)
-- Chart.js (Data Visualization)
+- Chart.js
 
-### **Backend / API (Vercel)**
-- Node.js (`/api/weather/history`, `/api/weather/current`)
-- Python 3.12 (`/api/inference`)
+The application uses native browser APIs and ES modules rather than React, Vue, or Angular.
 
-### **Machine Learning**
-- Scikit-Learn 1.7.2
-- Pandas 2.3.3
-- NumPy 2.3.5
-- Joblib 1.5.2
+A custom reactive store manages:
 
----
+- Live polling state
+- Historical telemetry
+- Cached observations
+- ML synchronization
+- Dashboard state
 
-## 🚀 Key Features
-
-* **Unified Telemetry Graphing**: Seamlessly visualizes real 30-day historical data alongside live-polled data without arbitrary timeline shifts.
-* **Stateless ML Pipeline**: The frontend strictly limits payloads (sending only the trailing 24 data points) to protect the Vercel Python endpoint from massive historical arrays, keeping compute times < 200ms.
-* **Fault Injection Engine (Demo Mode)**: Includes a built-in anomaly injection UI. Presenters can inject synthetic data (e.g., an instant +15°C temperature spike) directly into the live data stream to visually demonstrate the ML model catching and classifying the fault in real time.
-* **Graceful Degradation**: If the ML API goes down or times out, the system automatically falls back to an offline Z-score heuristic detector, ensuring the dashboard never stops monitoring.
+Chart.js provides telemetry visualization across multiple time windows.
 
 ---
 
-## ⚙️ Local Development
+## 5. Data Pipeline
 
-### 1. Prerequisites
-- Node.js (v18+)
-- Python (Strictly **3.12** for Vercel ABI compatibility)
-- Vercel CLI (`npm i -g vercel`)
+AWS Sentinel currently combines two weather-data sources for development and demonstration.
 
-### 2. Environment Setup
-Create a `.env.local` file in the root directory:
-```env
+### Historical telemetry — Open-Meteo
+
+- Retrieves historical weather observations.
+- Current implementation retrieves up to approximately 30 days / 744 hourly observations.
+- Historical data is cached in browser localStorage.
+- Cache duration is approximately 2 hours.
+
+### Live telemetry — OpenWeatherMap
+
+- Current live weather-data provider for the prototype.
+- Frontend periodically requests current observations.
+- API key is kept server-side through the backend proxy.
+
+### Timeline handling
+
+Weather providers may return repeated or slowly changing observation timestamps.
+
+AWS Sentinel therefore maintains:
+
+- observedEpoch — timestamp supplied by the provider.
+- receivedEpoch — time at which the application received the observation.
+
+This prevents repeated provider timestamps from collapsing the live time-series.
+
+---
+
+## 6. Machine Learning Pipeline
+
+The ML pipeline is implemented in Python.
+
+### Model
+
+**Scikit-Learn Isolation Forest**
+
+Isolation Forest is used as an unsupervised anomaly detector. It learns the structure of the normal training distribution and identifies observations that are isolated from that distribution.
+
+### Preprocessing
+
+- Pandas
+- NumPy
+- StandardScaler
+- Joblib
+
+### Feature engineering
+
+The current feature extractor generates **14 model features**.
+
+#### Raw meteorological features
+
+- Temperature
+- Humidity
+- Pressure
+- Wind speed
+
+#### Temporal features
+
+- Hour-of-day sine encoding
+- Hour-of-day cosine encoding
+
+These encode the daily cycle without treating adjacent hours across midnight as distant values.
+
+#### Rolling features
+
+For each meteorological variable:
+
+- Rolling mean
+- Rolling standard deviation
+
+The current rolling window is **12 observations**, corresponding to approximately one hour when observations arrive at 5-minute intervals.
+
+### Feature vector
+
+~~~text
+temperature
+humidity
+pressure
+wind_speed
+
+hour_sin
+hour_cos
+
+temperature_rolling_mean
+temperature_rolling_std
+
+humidity_rolling_mean
+humidity_rolling_std
+
+pressure_rolling_mean
+pressure_rolling_std
+
+wind_speed_rolling_mean
+wind_speed_rolling_std
+~~~
+
+---
+
+## 7. Model Training
+
+Training implementation:
+
+~~~text
+ml/train.py
+~~~
+
+Training process:
+
+~~~text
+Generate Healthy Telemetry
+        |
+        v
+Feature Extraction
+        |
+        v
+Missing-value Handling
+        |
+        v
+StandardScaler
+        |
+        v
+IsolationForest
+        |
+        v
+Joblib Model Artifacts
+~~~
+
+### Current training configuration
+
+- 10,000 generated healthy observations
+- Deterministic random seed
+- StandardScaler preprocessing
+- IsolationForest
+- 100 estimators
+- contamination = 0.01
+- random_state = 42
+
+The synthetic generator models:
+
+- Temperature daily variation
+- Humidity variation inversely related to temperature
+- Slow pressure variation
+- Irregular positive wind speed
+
+This provides a reproducible healthy baseline for the current prototype.
+
+---
+
+## 8. Real-Time Inference
+
+The inference endpoint is:
+
+~~~text
+/api/inference
+~~~
+
+Implemented in:
+
+~~~text
+api/inference.py
+ml/inference.py
+~~~
+
+Inference flow:
+
+~~~text
+Recent Telemetry History
+          |
+          v
+     Pandas DataFrame
+          |
+          v
+    Feature Extraction
+          |
+          v
+    Last Observation
+          |
+          v
+      StandardScaler
+          |
+          v
+    Isolation Forest
+          |
+          +------------------+
+          |                  |
+          v                  v
+     Prediction        Anomaly Score
+          |                  |
+          +--------+---------+
+                   v
+             Fault Classifier
+                   |
+                   v
+          JSON Result → UI
+~~~
+
+The current inference result includes:
+
+- is_anomaly
+- anomaly_score
+- raw_score
+- fault_type
+- confidence
+
+The anomaly score is derived from the Isolation Forest score and normalized to a 0–1 range for dashboard use.
+
+---
+
+## 9. Fault Classification
+
+The ML model determines whether an observation is anomalous. A secondary deterministic classifier then identifies the likely fault type using recent telemetry history.
+
+Current classifications:
+
+- NORMAL
+- SENSOR_DROPOUT
+- TEMPERATURE_SPIKE
+- TEMPERATURE_DROP
+- SENSOR_FREEZE
+- SENSOR_DRIFT
+- PRESSURE_SPIKE
+- PRESSURE_DROP
+- HUMIDITY_SPIKE
+- HUMIDITY_DROP
+- UNKNOWN_ANOMALY
+
+Current classification logic includes:
+
+- Missing-value detection
+- Historical mean/std comparison
+- Temperature z-score
+- Pressure z-score
+- Humidity z-score
+- Repeated identical readings
+- Monotonic short-term temperature movement
+
+Therefore the current architecture is accurately described as:
+
+**ML anomaly detection + deterministic fault classification.**
+
+It is not a fully learned fault-classification model.
+
+---
+
+## 10. Controlled Anomaly Injection
+
+AWS Sentinel includes a demo-oriented anomaly injection mechanism.
+
+It allows controlled synthetic faults to be introduced into the telemetry stream so the complete pipeline can be demonstrated without waiting for a naturally occurring sensor failure.
+
+~~~text
+Healthy Telemetry
+      |
+      v
+Inject Synthetic Fault
+      |
+      v
+Feature Extraction
+      |
+      v
+Isolation Forest
+      |
+      v
+Anomaly Detected
+      |
+      v
+Fault Classification
+      |
+      v
+Dashboard Alert
+~~~
+
+Example demonstrations include sudden temperature anomalies and other abnormal telemetry patterns supported by the demo controls.
+
+The injection mechanism is explicitly a **demo/testing feature** and is not presented as naturally occurring weather data.
+
+---
+
+## 11. Genuine Weather Event vs Sensor Fault
+
+A key research direction is distinguishing a genuine meteorological event from a faulty sensor.
+
+The current prototype provides the foundation through:
+
+- Historical context
+- Rolling features
+- Multiple weather variables
+- ML anomaly scoring
+- Fault classification
+- Controlled anomaly injection
+
+### Implemented now
+
+- Temporal feature engineering
+- Multivariate weather inputs
+- Isolation Forest anomaly detection
+- Deterministic fault classification
+
+### Future/extended ML work
+
+- Station-specific learned baselines
+- Stronger temporal sequence modelling
+- Explicit cross-variable physical-consistency modelling
+- Learned fault-type classification
+- Sensor degradation forecasting
+- Feature-attribution/explainability methods
+- Training and evaluation on larger real AWS/IMD datasets
+
+These extensions are planned directions, not claims about the current MVP.
+
+---
+
+## 12. Graceful Degradation
+
+If the ML endpoint is unavailable, the dashboard can fall back to an offline Z-score heuristic detector.
+
+~~~text
+ML API Available
+      |
+      v
+Isolation Forest inference
+      |
+      v
+ML anomaly result
+
+ML API Unavailable / Timeout
+      |
+      v
+Offline Z-score heuristic
+      |
+      v
+Fallback anomaly result
+~~~
+
+The fallback detector is **not the primary ML model**.
+
+---
+
+## 13. Repository Structure
+
+~~~text
+/
+├── api/
+│   └── inference.py
+├── ml/
+│   ├── train.py
+│   ├── inference.py
+│   ├── features.py
+│   ├── classifier.py
+│   ├── data_gen.py
+│   └── models/
+│       ├── scaler.joblib
+│       └── isolation_forest.joblib
+├── frontend/
+│   └── ...
+├── requirements.txt
+├── package.json
+├── vercel.json
+├── .python-version
+└── README.md
+~~~
+
+The frontend file organization may evolve as the MVP develops.
+
+---
+
+## 14. Technology Stack
+
+### Frontend
+
+| Technology | Purpose |
+|---|---|
+| HTML5 | UI structure |
+| CSS3 | Styling |
+| Vanilla JavaScript | Application logic |
+| Chart.js | Telemetry visualization |
+
+### Backend
+
+| Technology | Purpose |
+|---|---|
+| Node.js | Weather API proxy/backend routes |
+| Python 3.12 | ML inference |
+| Vercel Functions | Serverless deployment |
+
+### Machine Learning
+
+| Technology | Version | Purpose |
+|---|---:|---|
+| Scikit-Learn | 1.7.2 | Isolation Forest + StandardScaler |
+| Pandas | 2.3.3 | DataFrames and feature processing |
+| NumPy | 2.3.5 | Numerical computation |
+| Joblib | 1.5.2 | Model artifact persistence |
+
+### Data providers
+
+| Provider | Current role |
+|---|---|
+| Open-Meteo | Historical development telemetry |
+| OpenWeatherMap | Live development telemetry |
+
+These are development/demo data providers. They are not being represented as the IMD's production AWS feed.
+
+---
+
+## 15. Local Development
+
+### Prerequisites
+
+- Node.js 18+
+- Python 3.12
+- Vercel CLI
+
+Install Vercel CLI:
+
+~~~bash
+npm install -g vercel
+~~~
+
+### Environment variables
+
+Create .env.local:
+
+~~~env
 WEATHER_PROVIDER=openweathermap
 OPENWEATHERMAP_API_KEY=your_owm_api_key
-```
+~~~
 
-### 3. Run Locally
-Use the Vercel CLI to boot both the Node.js frontend/proxy and the Python ML backend simultaneously:
-```bash
+### Start
+
+~~~bash
 vercel dev
-```
-
-### 4. Machine Learning Modification
-If you wish to retrain the models:
-1. Navigate to the `/ml` directory.
-2. Ensure you train your models using a Pandas DataFrame so that `StandardScaler` saves `feature_names_in_`.
-3. Save your outputs (`scaler.joblib` and `isolation_forest.joblib`) to the `ml/models/` directory.
+~~~
 
 ---
 
-## ☁️ Deployment
+## 16. Retraining the ML Model
 
-The project is configured for one-click deployment on **Vercel**.
+Train the current prototype model with:
 
-1. Connect the repository to Vercel.
-2. In the Vercel dashboard, navigate to **Settings > Environment Variables**.
-3. Add `OPENWEATHERMAP_API_KEY` for **Production** and **Preview** environments.
-4. Deploy!
+~~~bash
+python ml/train.py
+~~~
 
-*(Note: Vercel automatically detects the `.python-version` file and provisions a Python 3.12 runtime environment, resolving NumPy/Pandas C-extension compilation issues).*
+Generated artifacts:
+
+~~~text
+ml/models/scaler.joblib
+ml/models/isolation_forest.joblib
+~~~
+
+For future real-data training, the feature schema used during training must remain consistent with inference.
 
 ---
 
-*Built by [AWS Sentinel Team] for Smart India Hackathon 2026*
+## 17. Deployment
+
+The project is configured for Vercel.
+
+~~~text
+GitHub Repository
+       |
+       v
+     Vercel
+       |
+       +--> Frontend
+       |
+       +--> Node.js API routes
+       |
+       +--> Python ML inference
+~~~
+
+Production environment variable:
+
+~~~text
+OPENWEATHERMAP_API_KEY
+~~~
+
+Python runtime:
+
+~~~text
+Python 3.12
+~~~
+
+---
+
+## 18. SIH 2026 Alignment
+
+| Requirement / capability | Status |
+|---|---|
+| Real-time anomaly detection | Implemented |
+| Temperature anomaly detection | Implemented |
+| Humidity anomaly detection | Implemented |
+| Pressure anomaly detection | Implemented |
+| Wind-speed feature | Implemented |
+| Temporal feature engineering | Implemented |
+| Rolling statistical features | Implemented |
+| Multivariate input | Implemented |
+| Unsupervised ML | Isolation Forest implemented |
+| Confidence output | Implemented through fault classification |
+| Fault-type identification | Deterministic classifier implemented |
+| Anomaly injection | Implemented for demonstration |
+| Historical telemetry | Implemented |
+| Real-time telemetry | Implemented |
+| Dashboard visualization | Implemented |
+| Graceful ML fallback | Implemented |
+| Learned seasonal/long-term baseline | Future extension |
+| Learned physical-consistency model | Future extension |
+| Learned fault classification | Future extension |
+| Sensor degradation prediction | Future extension |
+| Large-scale real AWS/IMD training | Future extension |
+| Advanced explainability | Future extension |
+
+---
+
+## 19. Current MVP vs Full Production Vision
+
+### Current MVP
+
+~~~text
+Historical + Live Telemetry
+          |
+          v
+Feature Engineering
+          |
+          v
+Isolation Forest
+          |
+          v
+Fault Classification
+          |
+          v
+Anomaly / Confidence
+          |
+          v
+Dashboard
+~~~
+
+### Full Production Vision
+
+~~~text
+AWS Network
+    |
+    v
+Secure Telemetry Ingestion
+    |
+    v
+Quality Control + Feature Store
+    |
+    v
+Station-Specific Temporal Models
+    |
+    v
+Multivariate Consistency Analysis
+    |
+    v
+ML Anomaly Ensemble
+    |
+    v
+Fault Classification
+    |
+    v
+Explainability + Confidence
+    |
+    v
+Sensor Health / Degradation
+    |
+    v
+Operator Dashboard + Alerts
+~~~
+
+The production vision is the next stage of development and should not be presented as already completed.
+
+---
+
+## 20. Project Positioning
+
+AWS Sentinel is not a weather-forecasting system.
+
+Its primary role is **data-quality intelligence for Automatic Weather Stations**:
+
+> **Learn normal station behaviour → detect abnormal observations → identify likely sensor faults → provide confidence and actionable monitoring information.**
+
+The central engineering challenge is to reduce false alarms while identifying observations that are inconsistent with the learned behaviour of the station and its telemetry context.
+
+---
+
+## 21. Documentation and Presentation Ground Rules
+
+Any SIH presentation or documentation generated from this repository should use the repository as the technical source of truth.
+
+### Present as implemented
+
+- Isolation Forest anomaly detection
+- StandardScaler preprocessing
+- Temporal/rolling feature engineering
+- Multivariate weather inputs
+- Fault classification
+- Confidence output
+- Historical + live telemetry
+- Controlled anomaly injection
+- Dashboard visualization
+- Serverless Python inference
+- Graceful fallback detection
+
+### Present as future/extended work unless implemented later
+
+- LSTM/Transformer temporal models
+- Autoencoders
+- SHAP-based explanations
+- Learned physical-consistency models
+- Sensor degradation prediction
+- Real IMD AWS production integration
+- Large-scale labelled training datasets
+- Production-grade automated retraining
+
+This distinction keeps the SIH presentation technically credible and prevents the project from claiming capabilities that are not actually present in the repository.
+
+---
+
+## License
+
+Developed for **Smart India Hackathon 2026 — SIH26073**.
+
+**Project:** AWS Sentinel  
+**Problem:** AI/ML-Based Intelligent Anomaly Detection for Automatic Weather Stations
