@@ -32,7 +32,11 @@ def predict_anomaly(df_history):
     # If there are NaNs due to insufficient history, fill them safely
     last_observation_features = last_observation_features.bfill().fillna(0)
     
-    scaled_data = scaler.transform(last_observation_features.to_numpy())
+    # Align features to what the scaler expects to avoid UserWarning
+    if hasattr(scaler, 'feature_names_in_'):
+        last_observation_features = last_observation_features[scaler.feature_names_in_]
+    
+    scaled_data = scaler.transform(last_observation_features)
     
     # IsolationForest predict returns 1 for inliers, -1 for outliers
     prediction = model.predict(scaled_data)[0]
