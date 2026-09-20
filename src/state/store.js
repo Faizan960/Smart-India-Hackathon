@@ -413,19 +413,17 @@ export const store = {
   _mergeHistoricalData(stationId, historicalObservations) {
     const series = Array.isArray(this.state.history[stationId]) ? this.state.history[stationId] : [];
     
-    // Merge by observedEpoch
+    // Merge by receivedEpoch
     const merged = [...historicalObservations, ...series];
     
-    // Deduplicate by observedEpoch (keeping the latest/live one if conflict)
+    // Deduplicate by receivedEpoch to preserve live polling points
     const map = new Map();
     for (const obs of merged) {
-       // if we already have it, and it's a live one (isSynthetic etc), we might overwrite, 
-       // but since we go chronologically (historical then live), live overwrites historical!
-       map.set(obs.observedEpoch, obs);
+       map.set(obs.receivedEpoch, obs);
     }
     
     // Sort chronologically
-    const finalSeries = Array.from(map.values()).sort((a, b) => a.observedEpoch - b.observedEpoch);
+    const finalSeries = Array.from(map.values()).sort((a, b) => a.receivedEpoch - b.receivedEpoch);
     
     // Cap at say 1440 points (actually 30 days of hourly is 720 points, so 2000 is plenty)
     this.state.history[stationId] = finalSeries.slice(-2000);
