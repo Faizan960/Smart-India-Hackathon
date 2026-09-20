@@ -110,13 +110,13 @@ function updateTheme() {
 }
 
 function getPointEpoch(p) {
-  // Robust epoch extraction: try observedEpoch first, then lastUpdatedEpoch, then parse timestamp
-  if (typeof p.observedEpoch === "number" && p.observedEpoch > 0) return p.observedEpoch;
-  if (typeof p.lastUpdatedEpoch === "number" && p.lastUpdatedEpoch > 0) return p.lastUpdatedEpoch;
+  // Use monotonic timestamp (polling time) for the x-axis to separate duplicate observations
   if (p.timestamp) {
     const ms = new Date(p.timestamp).getTime();
     if (!isNaN(ms)) return Math.floor(ms / 1000);
   }
+  if (typeof p.receivedEpoch === "number" && p.receivedEpoch > 0) return p.receivedEpoch;
+  if (typeof p.observedEpoch === "number" && p.observedEpoch > 0) return p.observedEpoch;
   return 0;
 }
 

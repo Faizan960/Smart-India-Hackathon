@@ -71,16 +71,20 @@ export const store = {
       ? this.state.history[station.id]
       : [];
 
-    const observedEpoch = station.observedEpoch || station.lastUpdatedEpoch || Math.floor(Date.now() / 1000);
-    const receivedEpoch = station.receivedEpoch || Math.floor(Date.now() / 1000);
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    const receivedEpoch = station.receivedEpoch || nowEpoch;
+    
+    // For live polling to build a historical chart, we MUST advance the timestamp 
+    // even if the upstream provider (e.g. OpenWeatherMap) hasn't updated its own `dt`.
+    const monotonicTimestamp = new Date(receivedEpoch * 1000).toISOString();
 
     const point = {
-      timestamp: station.timestamp || station.observedAt,
-      observedEpoch,
-      receivedEpoch,
-      observedAt: station.observedAt || new Date(observedEpoch * 1000).toISOString(),
-      receivedAt: station.receivedAt || new Date().toISOString(),
-      lastUpdatedEpoch: observedEpoch,
+      timestamp: monotonicTimestamp,
+      observedEpoch: station.observedEpoch,
+      receivedEpoch: receivedEpoch,
+      observedAt: station.observedAt,
+      receivedAt: station.receivedAt || monotonicTimestamp,
+      lastUpdatedEpoch: station.lastUpdatedEpoch || station.observedEpoch,
       temperature: station.temperature,
       humidity: station.humidity,
       pressure: station.pressure,
@@ -89,17 +93,19 @@ export const store = {
     };
 
     const last = series[series.length - 1];
-    // Deduplicate by upstream observation epoch (OpenWeatherMap dt)
-    if (!last || last.observedEpoch !== point.observedEpoch) {
+    
+    // Deduplicate strictly by receivedEpoch to prevent double-render appends,
+    // but ALLOW appending on every new poll cycle (where receivedEpoch advances).
+    if (!last || point.receivedEpoch > last.receivedEpoch) {
       series.push(point);
-      log("History", `observation accepted for ${station.id} (epoch=${observedEpoch})`);
+      log("History", `observation accepted for ${station.id} (epoch=${receivedEpoch})`);
       // Truncate to 1440 points (24 hours at 1 min intervals)
       this.state.history[station.id] = series.slice(-1440);
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(this.state.history));
       } catch {}
     } else {
-      log("History", `observation deduplicated for ${station.id} (epoch=${observedEpoch})`);
+      log("History", `observation deduplicated for ${station.id} (epoch=${receivedEpoch} <= ${last?.receivedEpoch})`);
     }
   },
 
@@ -462,11 +468,18 @@ export const store = {
       this.state.lastSync = new Date().toISOString();
 
       let allAnomalies = [];
+      // Synchronously append history for ALL stations first
       for (const station of liveStations) {
         this.appendHistory(station);
-        log("Store", `station updated: ${station.id}`);
-        const stationAnomalies = await this.runMLInference(station);
-        allAnomalies = allAnomalies.concat(stationAnomalies);
+        log("Store", `station history updated: ${station.id}`);
+      }
+      
+      // Concurrently run ML inference for all stations
+      const inferencePromises = liveStations.map(station => this.runMLInference(station));
+      const inferenceResults = await Promise.all(inferencePromises);
+      
+      for (const anomalies of inferenceResults) {
+        allAnomalies = allAnomalies.concat(anomalies);
       }
       this.state.anomalies = allAnomalies;
 
@@ -493,8 +506,10 @@ export const store = {
         this.state.lastSync = cached.savedAt || null;
 
         let allAnomalies = [];
-        for (const station of this.state.stations) {
-          allAnomalies = allAnomalies.concat(await this.runMLInference(station));
+        const inferencePromises = this.state.stations.map(station => this.runMLInference(station));
+        const inferenceResults = await Promise.all(inferencePromises);
+        for (const anomalies of inferenceResults) {
+          allAnomalies = allAnomalies.concat(anomalies);
         }
         this.state.anomalies = allAnomalies;
 
@@ -513,8 +528,10 @@ export const store = {
       this.state.lastSync = new Date().toISOString();
 
       let allAnomalies = [];
-      for (const station of this.state.stations) {
-        allAnomalies = allAnomalies.concat(await this.runMLInference(station));
+      const inferencePromises = this.state.stations.map(station => this.runMLInference(station));
+      const inferenceResults = await Promise.all(inferencePromises);
+      for (const anomalies of inferenceResults) {
+        allAnomalies = allAnomalies.concat(anomalies);
       }
       this.state.anomalies = allAnomalies;
 
