@@ -14,3 +14,10 @@ node_modules/
 src/config.local.js
 
 .vercel
+
+# AWS Sentinel ML pipeline — data & trained artifacts (not version-controlled)
+data/Raw/
+data/processed/
+data/injected/
+*.joblib
+

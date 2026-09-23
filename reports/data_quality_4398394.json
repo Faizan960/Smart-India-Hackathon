@@ -1,0 +1,62 @@
+{
+  "dataset": {
+    "name": "NOAA ISD hourly surface observations (Indian stations)",
+    "source": "NOAA Integrated Surface Database (ISD)",
+    "note": "Real surface-station observations. NOT IMD data; not labelled as IMD.",
+    "format": "csv"
+  },
+  "rows": 216712,
+  "rows_read": 220270,
+  "stations": 3,
+  "station_ids": [
+    "42071099999",
+    "43063099999",
+    "43117099999"
+  ],
+  "date_start": "2000-01-01 00:00:00",
+  "date_end": "2015-01-01 23:30:00",
+  "missing_temperature": 1781,
+  "missing_humidity": 2456,
+  "missing_pressure": 99310,
+  "duplicate_rows": 3554,
+  "unparseable_timestamps": 0,
+  "invalid_values": 0,
+  "per_station": {
+    "42071099999": {
+      "name": "AMRITSAR, IN",
+      "rows": 132752,
+      "date_start": "2000-01-01 00:30:00",
+      "date_end": "2015-01-01 23:30:00",
+      "median_interval_hours": 0.5,
+      "latitude": 31.709594,
+      "longitude": 74.797264,
+      "missing_temperature": 1500,
+      "missing_humidity": 1979,
+      "missing_pressure": 98768
+    },
+    "43063099999": {
+      "name": "PUNE, IN",
+      "rows": 42310,
+      "date_start": "2000-01-01 00:00:00",
+      "date_end": "2015-01-01 21:00:00",
+      "median_interval_hours": 3.0,
+      "latitude": 18.5333333,
+      "longitude": 73.85,
+      "missing_temperature": 155,
+      "missing_humidity": 294,
+      "missing_pressure": 286
+    },
+    "43117099999": {
+      "name": "SHOLAPUR, IN",
+      "rows": 41650,
+      "date_start": "2000-01-01 03:00:00",
+      "date_end": "2015-01-01 21:00:00",
+      "median_interval_hours": 3.0,
+      "latitude": 17.627958,
+      "longitude": 75.934842,
+      "missing_temperature": 126,
+      "missing_humidity": 183,
+      "missing_pressure": 256
+    }
+  }
+}
