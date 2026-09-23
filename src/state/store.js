@@ -12,6 +12,32 @@ const DEFAULT_STATION = "DL-001";
 const IS_DEV = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 const LIVE_REFRESH_INTERVAL_MS = IS_DEV ? 5000 : 60000;
 
+// Sentinel ML inference backend. Moved OFF the Vercel Python function onto a
+// dedicated FastAPI service (Render). The URL is configurable, never hard-coded:
+//   1. build-time VITE_SENTINEL_API_URL, if a bundler ever injects import.meta.env;
+//   2. otherwise the runtime public config (window.appConfig.sentinelApiUrl,
+//      populated from the VITE_SENTINEL_API_URL env var by /api/config/public) --
+//      this is what works today, since the frontend ships as native ES modules
+//      with no build step;
+//   3. otherwise http://localhost:8000 in local dev.
+// Returns null when nothing is configured so the caller uses the heuristic
+// fallback rather than hitting a dead path.
+function sentinelApiBase() {
+  try {
+    const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : null;
+    if (env && env.VITE_SENTINEL_API_URL) return String(env.VITE_SENTINEL_API_URL).replace(/\/+$/, "");
+  } catch { /* import.meta.env is unavailable without a bundler -- fall through */ }
+  const cfg = (typeof window !== "undefined" && window.appConfig && window.appConfig.sentinelApiUrl) || "";
+  if (cfg) return String(cfg).replace(/\/+$/, "");
+  if (IS_DEV) return "http://localhost:8000";
+  return null;
+}
+
+function sentinelInferenceUrl() {
+  const base = sentinelApiBase();
+  return base ? base + "/inference" : null;
+}
+
 // Concurrency control for API fetches
 const MAX_CONCURRENT = 5;
 
@@ -311,45 +337,91 @@ export const store = {
   async runMLInference(station) {
     if (!station || station.temperature === null) return [];
     const series = this.state.history[station.id] || [];
-    if (series.length < 6) return []; // Need history for features
+    if (series.length < 6) return []; // Need some history for temporal features
 
-    // Only send the most recent 24 observations to avoid huge payloads.
-    // ml/features.py uses a 12-row rolling window, so 24 is safe.
-    const inferenceSeries = series.slice(-24);
+    // Send a wider rolling window: the Sentinel temporal features are wall-clock
+    // based (3h / 24h windows, pressure tendency), so more history resolves them
+    // better. The adapter bounds/keeps the last LIVE_HISTORY_ROWS server-side.
+    // History points do NOT carry station_id/lat/lon, so pass those at top level.
+    const inferenceSeries = series.slice(-300);
+
+    // Resolve the Sentinel backend (Render FastAPI). If none is configured, skip
+    // straight to the heuristic fallback rather than hitting a dead relative path.
+    const inferenceUrl = sentinelInferenceUrl();
+    if (!inferenceUrl) {
+      log("ML", "No Sentinel API URL configured; using heuristic detection.");
+      return this.runHeuristicDetection(station, series);
+    }
 
     try {
-      const response = await fetch('/api/inference', {
+      const response = await fetch(inferenceUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history: inferenceSeries })
+        body: JSON.stringify({
+          history: inferenceSeries,
+          station_id: station.id,
+          latitude: station.latitude ?? null,
+          longitude: station.longitude ?? null
+        })
       });
       if (!response.ok) throw new Error('ML API failed');
       const result = await response.json();
-      
-      if (result.is_anomaly) {
-        const severity = result.anomaly_score > 0.8 ? "CRITICAL" : "WARNING";
-        return [{
-            id: `${station.id}-ml-${Date.now()}`,
-            stationId: station.id,
-            stationName: station.station || station.id,
-            sensor: "Multiple",
-            anomalyType: result.fault_type,
-            severity: severity,
-            observed: station.temperature,
-            expected: "Baseline",
-            deviation: 0,
-            confidence: result.confidence || result.anomaly_score,
-            timestamp: station.timestamp || station.observedAt,
-            temporalEvidence: `ML Score: ${result.anomaly_score.toFixed(2)}`,
-            multivariateEvidence: "Isolation Forest Model",
-            spatialEvidence: "N/A",
-            likelyCause: result.fault_type,
-            evidence: `ML model detected an anomaly with score ${result.anomaly_score.toFixed(2)}. Classified as ${result.fault_type}.`,
-            status: "NEW",
-            isSynthetic: station.isSynthetic || false
-        }];
-      }
-      return [];
+
+      // Surface a fault card when the detector flags an anomaly OR the pipeline
+      // typed a real fault (e.g. SENSOR_DROPOUT is is_anomaly=false but real).
+      // The degraded / incomplete-data path returns fault_type=NORMAL, so an
+      // unscoreable reading stays quiet rather than raising a phantom fault.
+      const faultType = result.fault_type || "NORMAL";
+      if (!result.is_anomaly && faultType === "NORMAL") return [];
+
+      // anomaly_score may legitimately be null (incomplete latest reading — the
+      // pipeline refuses to fabricate a score). NEVER call .toFixed() on null.
+      const score = (typeof result.anomaly_score === "number") ? result.anomaly_score : null;
+      const scoreText = score !== null ? score.toFixed(2) : "N/A (incomplete data)";
+
+      // Prefer the pipeline's own severity (NORMAL/WARNING/CRITICAL); fall back
+      // only when it is absent/UNKNOWN. Do NOT re-derive it from the raw score.
+      const severity = (result.severity && result.severity !== "UNKNOWN")
+        ? result.severity
+        : (score !== null && score > 0.8 ? "CRITICAL" : "WARNING");
+
+      const reasons = Array.isArray(result.reasons) ? result.reasons : [];
+      const reasonText = reasons.length ? reasons.join("; ") : `Classified as ${faultType}.`;
+
+      return [{
+        id: `${station.id}-ml-${Date.now()}`,
+        stationId: station.id,
+        stationName: station.station || station.id,
+        sensor: "Multiple",
+        anomalyType: faultType,
+        severity,
+        observed: station.temperature,
+        expected: "Model baseline",
+        deviation: 0,
+        // fault_confidence = confidence in the fault TYPE. This is NOT the anomaly
+        // score and NOT a calibrated probability; kept numeric for the existing UI.
+        confidence: (typeof result.confidence === "number") ? result.confidence : 0,
+        timestamp: station.timestamp || station.observedAt,
+        temporalEvidence: `Sentinel anomaly score: ${scoreText}`,
+        multivariateEvidence: "AWS Sentinel (Isolation Forest + evidence fusion)",
+        spatialEvidence: "N/A",
+        likelyCause: faultType,
+        evidence: `Sentinel ML assessment: ${reasonText} (anomaly score ${scoreText}).`,
+        status: "NEW",
+        isSynthetic: station.isSynthetic || false,
+        // --- richer Sentinel fields (additive; the existing UI ignores unknown keys) ---
+        source: "aws_sentinel",
+        mlScore: score,
+        fusedStatus: result.fused_status || null,
+        faultConfidence: (typeof result.fault_confidence === "number") ? result.fault_confidence : null,
+        reasons,
+        explanation: result.explanation || null,
+        layaDecision: result.laya_decision || null,
+        verification: result.verification || null,
+        health: result.health || null,
+        baselineSource: result.baseline_source || null,
+        dataComplete: result.data_complete !== false
+      }];
     } catch (err) {
       log("ML", "Fallback to heuristic detection: " + err.message);
       return this.runHeuristicDetection(station, series);
