@@ -95,6 +95,54 @@ raises a clear error (never fabricates) when no checkpoint is installed;
 output. The typed decision and the Isolation Forest are combined by the
 verification rule, **never averaged**.
 
+## Live weather integration (branch `feature/live-weather-demo`)
+
+The live dashboard's `POST /api/inference` endpoint is bridged to this pipeline by
+a single thin adapter, `ml/pipeline/live_adapter.py`. Nothing OpenWeatherMap- or
+browser-specific leaks into the core ML modules — the dependency direction is
+strictly adapter → pipeline, so `ml/pipeline` stays isolated.
+
+Data-source map — each role is distinct and must not be conflated:
+
+| Role | Source | Notes |
+|------|--------|-------|
+| Model **training** | NOAA ISD composite CSV | historical; **not IMD**, never represented as such |
+| **Live inference** input | OpenWeatherMap | current dev live provider; an *inference input*, never a training set |
+| Historical **dev** telemetry | Open-Meteo | browser-side charting / history only |
+| Detection / typing / explanation | this pipeline (`ml/pipeline`) | Isolation Forest + baselines + classifier + evidence + SHAP |
+| **Decision** layer | Laya (`ml/laya_base`) | typed decision, verified by the detector |
+
+`assess_live(history, station_id, latitude, longitude)`:
+
+1. normalizes the browser's rolling history (a list of observation dicts) into the
+   canonical Sentinel schema — selection/renaming only, so **missing sensors stay
+   `NaN`**, never imputed or zero-filled;
+2. calls `SentinelInference.predict_observation` on the true latest reading;
+3. returns the pipeline's structured result plus `confidence` (alias of
+   `fault_confidence`), `data_complete`, `baseline_source` and `n_history`.
+
+Honesty guarantees carried across the bridge:
+
+- **Live station ids are development locations.** `DL-001`, `MH-042`, … are not
+  trained NOAA stations, so they have no station-specific baseline; the pipeline
+  falls back to global climatology and `baseline_source` reports `global_fallback`
+  so the UI never implies a real historical baseline exists for a live location.
+- **No fabricated score.** An incomplete latest reading (a live sensor value has
+  not arrived yet) yields `anomaly_score = null` — never a zero-filled or invented
+  number — and is surfaced as at most a hedged `SENSOR_DROPOUT`, not a confirmed
+  hardware failure.
+- **The NOAA evaluation numbers below are not a measured OpenWeatherMap accuracy.**
+  They are held-out NOAA performance with injected synthetic faults; live accuracy
+  on OpenWeatherMap data is not separately measured here, and no IMD production
+  integration is claimed.
+
+The endpoint keeps the existing HTTP contract (`is_anomaly`, `anomaly_score`,
+`fault_type`, `confidence`) and adds the richer Sentinel fields (`severity`,
+`fused_status`, `reasons`, `explanation`, `laya_decision`, `verification`,
+`health`, `baseline_source`, `data_complete`). The response is serialized with
+`json.dumps(..., allow_nan=False)` so a NaN/Infinity can never reach the client.
+Integration tests live in `tests/ml/test_live_adapter.py`.
+
 ## Measured performance
 
 Measured on the held-out real NOAA test split with injected synthetic faults

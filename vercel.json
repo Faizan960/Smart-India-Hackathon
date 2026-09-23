@@ -4,7 +4,7 @@
   "devCommand": null,
   "functions": {
     "api/inference.py": {
-      "includeFiles": "ml/models/*.joblib"
+      "includeFiles": "models/sentinel/**"
     }
   }
 }
