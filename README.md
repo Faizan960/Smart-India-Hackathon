@@ -770,6 +770,706 @@ This distinction keeps the SIH presentation technically credible and prevents th
 
 ---
 
+## Current Production Architecture
+
+AWS Sentinel uses a split deployment architecture. The Vercel application serves the dashboard and weather/configuration routes, while the Python Sentinel inference service runs separately on Render.
+
+\`\`\`text
+                         LIVE WEATHER DATA
+                                |
+                                v
+                     +----------------------+
+                     | Vercel Application   |
+                     | Frontend + JS        |
+                     +----------+-----------+
+                                |
+                     /api/weather/current
+                                |
+                                v
+                      Browser normalizer
+                                |
+                                v
+                   Per-station rolling history
+                                |
+                         POST /inference
+                                |
+                                v
+                  +-------------------------+
+                  | Render                  |
+                  | FastAPI + Docker        |
+                  | Sentinel Inference API  |
+                  +-----------+-------------+
+                              |
+                              v
+                 ml.pipeline.live_adapter
+                              |
+                              v
+                     SentinelInference
+                              |
+       +----------------------+----------------------+
+       |                      |                      |
+       v                      v                      v
+ Feature Engineering   Isolation Forest    Physics / Evidence
+       |                      |                      |
+       +----------------------+----------------------+
+                              |
+                              v
+                     Fault Classification
+                              |
+                              v
+                       Evidence Fusion
+                              |
+                              v
+                    Laya/JEV Decision Layer
+                              |
+                              v
+                         Verification
+                              |
+                              v
+                       SHAP Explanation
+                              |
+                              v
+                     Health / Imputation
+                              |
+                              v
+                       Strict JSON result
+                              |
+                              v
+                       Vercel Dashboard
+\`\`\`
+
+### Production URLs
+
+Frontend:
+
+\`\`\`text
+https://smart-india-hackathon-ebon.vercel.app
+\`\`\`
+
+Sentinel inference API:
+
+\`\`\`text
+https://smart-india-hackathon-pcfm.onrender.com
+\`\`\`
+
+---
+
+## Vercel Application Layer
+
+Vercel continues to host the production frontend from the \`main\` branch.
+
+Vercel responsibilities:
+
+- Frontend/dashboard
+- \`/api/weather/current\`
+- \`/api/weather/history\`
+- \`/api/config/public\`
+
+The Sentinel inference backend is no longer dependent on a Vercel Python function.
+
+### Runtime Sentinel configuration
+
+The public runtime configuration endpoint is:
+
+\`\`\`text
+GET /api/config/public
+\`\`\`
+
+The Vercel environment variable is:
+
+\`\`\`text
+VITE_SENTINEL_API_URL=https://smart-india-hackathon-pcfm.onrender.com
+\`\`\`
+
+The frontend currently uses native ES modules rather than a Vite build pipeline, so \`api/config/public.js\` exposes the configured URL to the browser at runtime.
+
+The frontend then calls:
+
+\`\`\`text
+POST https://smart-india-hackathon-pcfm.onrender.com/inference
+\`\`\`
+
+The Render URL is a public API origin, not a secret.
+
+---
+
+## Render Sentinel API
+
+The dedicated inference service lives under:
+
+\`\`\`text
+sentinel_api/
+├── main.py
+├── requirements.txt
+├── Dockerfile
+├── smoke_test.py
+└── README.md
+\`\`\`
+
+\`sentinel_api/main.py\` is deliberately a thin HTTP wrapper. It delegates inference to:
+
+\`\`\`text
+ml.pipeline.live_adapter.assess_live()
+\`\`\`
+
+The service:
+
+- Loads Sentinel model artifacts once at startup
+- Exposes \`GET /health\`
+- Exposes \`POST /inference\`
+- Applies CORS
+- Returns strict JSON
+- Does not retrain the model during requests
+- Does not read NOAA training CSVs during normal inference
+
+### Docker runtime
+
+The service uses:
+
+\`\`\`text
+python:3.12-slim
+\`\`\`
+
+The Docker build context is the repository root because the image needs:
+
+\`\`\`text
+ml/
+models/sentinel/
+sentinel_api/
+\`\`\`
+
+Render injects \`$PORT\`, and Uvicorn binds to \`0.0.0.0\`.
+
+### Render environment variable
+
+\`\`\`text
+FRONTEND_ORIGIN=https://smart-india-hackathon-ebon.vercel.app
+\`\`\`
+
+---
+
+## Real-Data AWS Sentinel ML Pipeline
+
+The authoritative real-data implementation is under:
+
+\`\`\`text
+ml/pipeline/
+\`\`\`
+
+It operates primarily on:
+
+- Temperature
+- Atmospheric pressure
+- Relative humidity
+
+\`wind_speed\` is carried as an auxiliary field for the existing Laya state contract.
+
+The current model is trained on historical **NOAA ISD** data, not IMD data. The current training source is:
+
+\`\`\`text
+data/Raw/4398394.csv
+\`\`\`
+
+The real-data pipeline uses chronological train/validation/test separation and wall-clock-aware temporal calculations.
+
+### 14 detector features
+
+\`\`\`text
+temperature
+humidity
+pressure
+
+temp_dev_baseline
+humidity_dev_baseline
+pressure_dev_baseline
+
+temp_rate
+humidity_rate
+pressure_rate
+
+temp_roll_std_3h
+pressure_roll_std_3h
+
+vpd
+thermo_inconsistency_score
+pressure_change_3h
+\`\`\`
+
+The trained runtime artifacts are stored in:
+
+\`\`\`text
+models/sentinel/
+├── baselines.json
+├── classifier_config.json
+├── feature_config.json
+├── isolation_forest.joblib
+├── model_metadata.json
+└── scaler.joblib
+\`\`\`
+
+---
+
+## Detection and Fault Classification
+
+### Isolation Forest
+
+Isolation Forest is the primary unsupervised anomaly detector.
+
+\`\`\`text
+14 model features
+       |
+       v
+StandardScaler
+       |
+       v
+Isolation Forest
+       |
+       v
+Raw score
+       |
+       v
+Training-distribution calibration
+       |
+       v
+anomaly_score [0,1]
+\`\`\`
+
+The detector supplies anomaly evidence and the anomaly flag. It does not independently prove a hardware failure.
+
+### Fault classification
+
+Fault classification is currently deterministic and evidence-based rather than a separately trained fault-classification model.
+
+Canonical fault taxonomy:
+
+\`\`\`text
+NORMAL
+SENSOR_DROPOUT
+SENSOR_FREEZE
+TRANSIENT_SPIKE
+CALIBRATION_DRIFT
+PHYSICAL_INCONSISTENCY
+MULTIVARIATE_ANOMALY
+UNKNOWN_ANOMALY
+\`\`\`
+
+The classifier uses evidence such as missing values, unexpected gaps, flat readings, rate changes, robust baseline deviations, drift signatures, thermodynamic inconsistency, and multi-sensor deviation.
+
+---
+
+## Evidence Fusion
+
+Evidence fusion is an inspectable rule layer, not a weighted average of model outputs.
+
+It produces:
+
+\`\`\`text
+severity
+fused_status
+reasons
+\`\`\`
+
+Severity:
+
+\`\`\`text
+NORMAL
+WARNING
+CRITICAL
+\`\`\`
+
+Fused status:
+
+\`\`\`text
+NORMAL
+CONFIRMED
+UNVERIFIED
+\`\`\`
+
+Anomaly score, severity, fault confidence, fault presence, and verification status remain separate concepts.
+
+---
+
+## Laya / JEV Decision Model
+
+Laya/JEV is used as a **typed decision layer** around the Sentinel evidence. It is not the raw anomaly detector.
+
+The existing typed contract uses:
+
+\`\`\`text
+fault_type     -> choice
+fault_present  -> noul
+\`\`\`
+
+The Sentinel bridge is:
+
+\`\`\`text
+ml/pipeline/laya_adapter.py
+\`\`\`
+
+### Real Laya path
+
+When a Laya checkpoint is installed, \`run_laya()\` delegates to the existing \`LayaDecisionEngine\`.
+
+If Laya is not available, the implementation does not fabricate a learned result.
+
+### Pipeline-derived typed decision
+
+\`pipeline_decision()\` can produce a LayaDecision-shaped result from Sentinel's own evidence.
+
+It explicitly tags the source:
+
+\`\`\`text
+source = "aws_sentinel_pipeline"
+\`\`\`
+
+This is important: a pipeline-derived typed decision must not be presented as though an external Laya model itself generated it.
+
+### Verification
+
+The Laya-typed decision and the independent Isolation Forest are compared by a verification rule.
+
+They are **not averaged**.
+
+\`\`\`text
+Sentinel evidence
+      |
+      v
+Typed decision
+      |
+      +----------------------+
+      |                      |
+      v                      v
+Laya-style choice      Isolation Forest
+      |                      |
+      +----------+-----------+
+                 |
+                 v
+         verification status
+\`\`\`
+
+Example response fields:
+
+\`\`\`json
+{
+  "laya_decision": {
+    "decision": "NORMAL",
+    "confidence": 0.7652,
+    "fault_present": 0.2348,
+    "source": "aws_sentinel_pipeline"
+  },
+  "verification": {
+    "laya_decision": "NORMAL",
+    "laya_confidence": 0.7652,
+    "laya_fault_probability": 0.2348,
+    "isolation_forest_anomaly": false,
+    "isolation_forest_score": 0.2347522321872649,
+    "verification_status": "NORMAL",
+    "decision_source": "aws_sentinel_pipeline"
+  }
+}
+\`\`\`
+
+The Laya-shaped presence/confidence fields are not automatically calibrated probabilities of physical sensor failure.
+
+---
+
+## SHAP Explainability
+
+The Render runtime includes SHAP so deployed explanations can use the same explainability path as validated local inference.
+
+For scored observations:
+
+\`\`\`text
+explanation.method = "shap"
+\`\`\`
+
+The explanation may contain:
+
+- Base value
+- Top contributing features
+- Feature values
+- Standardized values
+- Contribution direction
+- Human-readable feature descriptions
+- Summary text
+
+SHAP is feature attribution. It is not causal proof and is not itself a calibrated probability.
+
+A labelled attribution fallback exists for runtimes where SHAP is unavailable.
+
+---
+
+## Missing Data, Imputation and Health
+
+### Missing data
+
+Missing core sensor values are never silently fabricated.
+
+When the latest observation cannot be scored because a core sensor is missing:
+
+\`\`\`text
+anomaly_score = null
+\`\`\`
+
+The API uses strict JSON serialization with \`allow_nan=False\`, so \`NaN\` and \`Infinity\` are not emitted to clients.
+
+### Imputation
+
+Imputation is a separate continuity layer:
+
+- Only short interior gaps are interpolated
+- Leading/trailing gaps remain missing
+- Over-long gaps remain missing
+- Filled values are explicitly flagged
+- Imputed values do not feed detector training
+
+### Sensor health
+
+Health tracks recent anomaly frequency and reports:
+
+\`\`\`text
+HEALTHY
+WATCH
+DEGRADED
+CRITICAL
+UNKNOWN
+\`\`\`
+
+\`health_status\` and \`dominant_fault_in_range\` represent different dimensions. Health is a maintenance-prioritisation signal, not a confirmed hardware-failure verdict.
+
+---
+
+## Live Data and Temporal Resolution
+
+The live browser integration currently polls live weather roughly at minute-level intervals, while the historical NOAA training data has different and mixed cadence.
+
+The live payload carries both:
+
+- \`observedEpoch\` — provider-associated observation timing
+- \`receivedEpoch\` — application receive timing
+
+Therefore:
+
+\`\`\`text
+observation time != receive/poll time
+\`\`\`
+
+This temporal-resolution difference is an identified integration issue under investigation. It should not be described as fully resolved, and minute-level live rate values should not automatically be interpreted as equivalent to hourly changes without validating the timestamp semantics.
+
+---
+
+## Production API Contract
+
+### \`GET /health\`
+
+Returns service/model status.
+
+Example:
+
+\`\`\`json
+{
+  "status": "ok",
+  "model_loaded": true,
+  "service": "aws-sentinel-inference"
+}
+\`\`\`
+
+### \`POST /inference\`
+
+Request:
+
+\`\`\`json
+{
+  "history": [],
+  "station_id": "PB-011",
+  "latitude": 30.901,
+  "longitude": 75.8573
+}
+\`\`\`
+
+Response fields include:
+
+\`\`\`text
+station_id
+timestamp
+anomaly_score
+is_anomaly
+severity
+fault_type
+fault_confidence
+legacy_label
+fault_present
+fused_status
+reasons
+explanation
+laya_decision
+verification
+health
+confidence
+data_complete
+baseline_source
+n_history
+\`\`\`
+
+The request carries rolling history; the API evaluates the true latest observation after normalization.
+
+---
+
+## Deployment Verification
+
+The deployed Render service has been verified with the project's smoke-test client.
+
+Verified scenarios:
+
+\`\`\`text
+1. Normal history            -> HTTP 200
+2. Missing sensor value      -> HTTP 200
+3. Empty history             -> HTTP 400
+4. Temperature spike         -> HTTP 200
+5. Sensor dropout            -> HTTP 200
+\`\`\`
+
+The deployed service returns real model outputs, Laya-shaped decision/verification fields, SHAP explanations on the tested scored path, and strict JSON.
+
+The Vercel production dashboard has also successfully issued \`POST /inference\` requests to the Render service and received HTTP 200 responses.
+
+These checks establish deployment/integration functionality. They are not field-validated sensor-failure accuracy.
+
+---
+
+## Evaluation
+
+The real-data pipeline has been evaluated on a chronological NOAA held-out split with injected synthetic faults.
+
+Reported metrics:
+
+\`\`\`text
+Single-station:
+Detection F1      0.4618
+Detection Recall  0.3954
+Event Recall      0.9121
+
+Multi-station:
+Detection F1      0.4819
+Detection Recall  0.4427
+Precision         0.5287
+Event Recall      0.9176
+\`\`\`
+
+These are pipeline evaluation results using held-out NOAA data and injected synthetic faults. They are not OpenWeatherMap field accuracy, IMD production accuracy, weather-forecast accuracy, or confirmed hardware-failure validation rates.
+
+---
+
+## Testing
+
+Run the ML suite:
+
+\`\`\`bash
+python -m pytest tests/ml -q
+\`\`\`
+
+Current validated result:
+
+\`\`\`text
+97 passed
+\`\`\`
+
+Test the deployed Render API:
+
+\`\`\`bash
+python sentinel_api/smoke_test.py https://smart-india-hackathon-pcfm.onrender.com
+\`\`\`
+
+---
+
+## Repository Structure
+
+\`\`\`text
+/
+├── api/
+│   ├── config/
+│   │   └── public.js
+│   ├── imd/
+│   │   └── aws.js
+│   └── weather/
+│       ├── current.js
+│       └── history.js
+│
+├── ml/
+│   ├── pipeline/
+│   └── laya_base/
+│
+├── models/
+│   └── sentinel/
+│
+├── sentinel_api/
+│   ├── Dockerfile
+│   ├── README.md
+│   ├── main.py
+│   ├── requirements.txt
+│   └── smoke_test.py
+│
+├── src/
+│   ├── api/
+│   ├── components/
+│   ├── data/
+│   ├── state/
+│   └── ui/
+│
+├── tests/
+│   └── ml/
+│
+├── docs/
+│   └── ML_PIPELINE.md
+│
+├── .dockerignore
+├── .env.example
+├── vercel.json
+└── README.md
+\`\`\`
+
+---
+
+## Implemented vs Future
+
+### Implemented
+
+- Real-data NOAA training pipeline
+- Chronological evaluation
+- Robust station/month/hour baselines
+- Thermodynamic evidence
+- Time-based temporal features
+- Isolation Forest anomaly detection
+- Deterministic fault classification
+- Evidence fusion
+- Laya/JEV typed decision bridge
+- Isolation Forest verification
+- SHAP explainability
+- Imputation
+- Sensor health
+- Controlled fault injection
+- Live OpenWeatherMap integration
+- FastAPI + Docker inference service
+- Render deployment
+- Vercel → Render production integration
+- Strict JSON handling
+- Heuristic fallback
+
+### Future / extended work
+
+- Direct production IMD AWS ingestion
+- Larger field datasets
+- Training data matched to high-frequency live cadence
+- Learned sequence models
+- Learned fault-type classification
+- Stronger spatial consistency analysis
+- Sensor degradation forecasting
+- Automated retraining and model monitoring
+- Field validation against confirmed hardware failures
+- Production alerting workflows
+
+
+
 ## License
 
 Developed for **Smart India Hackathon 2026 — SIH26073**.
