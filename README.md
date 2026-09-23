@@ -774,85 +774,171 @@ This distinction keeps the SIH presentation technically credible and prevents th
 
 AWS Sentinel uses a split deployment architecture. The Vercel application serves the dashboard and weather/configuration routes, while the Python Sentinel inference service runs separately on Render.
 
-\`\`\`text
-                         LIVE WEATHER DATA
-                                |
-                                v
-                     +----------------------+
-                     | Vercel Application   |
-                     | Frontend + JS        |
-                     +----------+-----------+
-                                |
-                     /api/weather/current
-                                |
-                                v
-                      Browser normalizer
-                                |
-                                v
-                   Per-station rolling history
-                                |
-                         POST /inference
-                                |
-                                v
-                  +-------------------------+
-                  | Render                  |
-                  | FastAPI + Docker        |
-                  | Sentinel Inference API  |
-                  +-----------+-------------+
-                              |
-                              v
-                 ml.pipeline.live_adapter
-                              |
-                              v
-                     SentinelInference
-                              |
-       +----------------------+----------------------+
-       |                      |                      |
-       v                      v                      v
- Feature Engineering   Isolation Forest    Physics / Evidence
-       |                      |                      |
-       +----------------------+----------------------+
-                              |
-                              v
-                     Fault Classification
-                              |
-                              v
-                       Evidence Fusion
-                              |
-                              v
-                    Laya/JEV Decision Layer
-                              |
-                              v
-                         Verification
-                              |
-                              v
-                       SHAP Explanation
-                              |
-                              v
-                     Health / Imputation
-                              |
-                              v
-                       Strict JSON result
-                              |
-                              v
-                       Vercel Dashboard
-\`\`\`
+```text
+                         HISTORICAL TRAINING DATA
+                                  |
+                                  v
+                    +-----------------------------+
+                    | NOAA Integrated Surface     |
+                    | Database (ISD)              |
+                    | Historical Weather Data     |
+                    +-------------+---------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | Data Mapping + Quality      |
+                    | Control + Preprocessing     |
+                    +-------------+---------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | Station / Month / Hour      |
+                    | Robust Baselines            |
+                    +-------------+---------------+
+                                  |
+                                  |
+                                  v
+LIVE WEATHER       +-----------------------------+
+OpenWeatherMap --->| Unified Telemetry / Live    |
+                   | Adapter                     |
+                   +-------------+---------------+
+                                 |
+                                 v
+                   +-----------------------------+
+                   | Feature Engineering         |
+                   |                             |
+                   | • Baseline Deviations       |
+                   | • Temporal / Rate Features  |
+                   | • Rolling Features          |
+                   | • VPD / Thermodynamics      |
+                   | • Pressure Tendency         |
+                   +-------------+---------------+
+                                 |
+                                 v
+                   +-----------------------------+
+                   | StandardScaler              |
+                   +-------------+---------------+
+                                 |
+                                 v
+                   +-----------------------------+
+                   | Isolation Forest            |
+                   | ML Anomaly Detection        |
+                   +-------------+---------------+
+                                 |
+                    +------------+-------------+
+                    |                          |
+                    v                          v
+          +-------------------+      +----------------------+
+          | Anomaly Score     |      | Fault Classification |
+          | is_anomaly        |      |                      |
+          +---------+---------+      | • SENSOR_DROPOUT     |
+                    |                | • SENSOR_FREEZE      |
+                    |                | • TRANSIENT_SPIKE    |
+                    |                | • CALIBRATION_DRIFT  |
+                    |                | • PHYSICAL_INCONS.   |
+                    |                | • MULTIVARIATE       |
+                    |                | • UNKNOWN            |
+                    |                +----------+-----------+
+                    |                           |
+                    +-------------+-------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | Evidence Fusion             |
+                    |                             |
+                    | • Severity                  |
+                    | • Fused Status              |
+                    | • Reasons                   |
+                    +-------------+---------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | LAYA / JEV DECISION LAYER   |
+                    |                             |
+                    | fault_type  -> choice       |
+                    | fault_present -> noul       |
+                    +-------------+---------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | Decision Verification       |
+                    |                             |
+                    | Laya/JEV Decision           |
+                    |          <->                |
+                    | Isolation Forest Evidence  |
+                    +-------------+---------------+
+                                  |
+                    +-------------+-------------+
+                    |                           |
+                    v                           v
+          +-------------------+       +----------------------+
+          | SHAP Explainability|       | Sensor Health       |
+          |                   |       | & Imputation         |
+          | Why was it        |       |                      |
+          | flagged?          |       | HEALTHY / WATCH /   |
+          +---------+---------+       | DEGRADED / CRITICAL  |
+                    |                 +----------+-----------+
+                    |                            |
+                    +-------------+--------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | FastAPI Inference API       |
+                    |           Render             |
+                    +-------------+---------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | Vercel Web Dashboard        |
+                    | Visualization + Alerts       |
+                    +-----------------------------+
+                                  |
+                                  v
+                    +-----------------------------+
+                    | Controlled Fault Injection  |
+                    |       Demo / Testing         |
+                    +-----------------------------+
+```
 
-### Production URLs
+### Data-source roles
 
-Frontend:
+The architecture deliberately separates the three data sources:
 
-\`\`\`text
-https://smart-india-hackathon-ebon.vercel.app
-\`\`\`
+| Source | Role |
+|---|---|
+| **NOAA ISD** | Historical training and evaluation data for the Sentinel ML pipeline |
+| **OpenWeatherMap** | Current live weather input used for live inference |
+| **Open-Meteo** | Historical development telemetry used by the frontend for charts/context |
 
-Sentinel inference API:
+NOAA is the current real-data training source and is **not IMD data**. OpenWeatherMap is the current live inference provider. Open-Meteo is not the source used to train the current Isolation Forest.
 
-\`\`\`text
-https://smart-india-hackathon-pcfm.onrender.com
-\`\`\`
+### Decision path
 
----
+The core ML decision path is:
+
+```text
+Features
+   ↓
+Isolation Forest
+   ↓
+Fault Classification
+   ↓
+Evidence Fusion
+   ↓
+Laya / JEV Decision
+   ↓
+Verification
+   ↓
+SHAP + Health
+   ↓
+FastAPI / Render
+   ↓
+Vercel Dashboard
+```
+
+**Laya/JEV does not replace the Isolation Forest.** It is the typed decision layer around the structured Sentinel evidence. The Isolation Forest remains an independent anomaly signal used during verification.
+
+**Controlled Fault Injection is a testing/demo path**, not a normal production data source.
 
 ## Vercel Application Layer
 
