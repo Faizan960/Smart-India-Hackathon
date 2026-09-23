@@ -12,6 +12,32 @@ const DEFAULT_STATION = "DL-001";
 const IS_DEV = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 const LIVE_REFRESH_INTERVAL_MS = IS_DEV ? 5000 : 60000;
 
+// Sentinel ML inference backend. Moved OFF the Vercel Python function onto a
+// dedicated FastAPI service (Render). The URL is configurable, never hard-coded:
+//   1. build-time VITE_SENTINEL_API_URL, if a bundler ever injects import.meta.env;
+//   2. otherwise the runtime public config (window.appConfig.sentinelApiUrl,
+//      populated from the VITE_SENTINEL_API_URL env var by /api/config/public) --
+//      this is what works today, since the frontend ships as native ES modules
+//      with no build step;
+//   3. otherwise http://localhost:8000 in local dev.
+// Returns null when nothing is configured so the caller uses the heuristic
+// fallback rather than hitting a dead path.
+function sentinelApiBase() {
+  try {
+    const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : null;
+    if (env && env.VITE_SENTINEL_API_URL) return String(env.VITE_SENTINEL_API_URL).replace(/\/+$/, "");
+  } catch { /* import.meta.env is unavailable without a bundler -- fall through */ }
+  const cfg = (typeof window !== "undefined" && window.appConfig && window.appConfig.sentinelApiUrl) || "";
+  if (cfg) return String(cfg).replace(/\/+$/, "");
+  if (IS_DEV) return "http://localhost:8000";
+  return null;
+}
+
+function sentinelInferenceUrl() {
+  const base = sentinelApiBase();
+  return base ? base + "/inference" : null;
+}
+
 // Concurrency control for API fetches
 const MAX_CONCURRENT = 5;
 
@@ -319,8 +345,16 @@ export const store = {
     // History points do NOT carry station_id/lat/lon, so pass those at top level.
     const inferenceSeries = series.slice(-300);
 
+    // Resolve the Sentinel backend (Render FastAPI). If none is configured, skip
+    // straight to the heuristic fallback rather than hitting a dead relative path.
+    const inferenceUrl = sentinelInferenceUrl();
+    if (!inferenceUrl) {
+      log("ML", "No Sentinel API URL configured; using heuristic detection.");
+      return this.runHeuristicDetection(station, series);
+    }
+
     try {
-      const response = await fetch('/api/inference', {
+      const response = await fetch(inferenceUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
