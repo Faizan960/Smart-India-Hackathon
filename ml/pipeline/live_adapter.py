@@ -42,6 +42,20 @@ LIVE_HISTORY_ROWS = 300
 # Placeholder station id when the caller supplies none (kept obviously non-NOAA).
 DEFAULT_LIVE_STATION = "LIVE-0001"
 
+# Minimum spacing (seconds) between two *distinct* live observations. The dashboard
+# POLLS the weather API ~once a minute, but the upstream source (OpenWeatherMap)
+# only recomputes its observation roughly every ~10 minutes, so the same physical
+# observation is delivered on many consecutive polls. The Sentinel temporal
+# features (temp_rate/humidity_rate/pressure_rate, pressure_change_3h) were trained
+# on NOAA observations at their true observation cadence (~0.5h METAR to 3h
+# synoptic); computing a per-hour rate over a ~1-minute poll gap divides a tiny
+# value change by a tiny dt and fabricates a huge rate (0.27 C/min -> ~16 C/h) the
+# model never saw. Polls closer than this are collapsed to a single observation
+# (see _collapse_to_observations) so live rates stay on the trained scale. 10 min
+# matches OpenWeatherMap's real update cadence; anything finer is polling/cache
+# jitter, not a new measurement. Overridable per call (mainly for tests).
+LIVE_MIN_OBS_INTERVAL_S = 600.0
+
 # incoming (browser-normalized) field -> accepted source keys, most-preferred first
 _FIELD_ALIASES: Dict[str, tuple] = {
     "temperature": ("temperature", "temperatureC", "temp"),
@@ -51,8 +65,18 @@ _FIELD_ALIASES: Dict[str, tuple] = {
     "latitude": ("latitude", "lat"),
     "longitude": ("longitude", "lon", "lng"),
 }
-_TIMESTAMP_KEYS = ("timestamp", "observedAt", "receivedAt", "time")
-_EPOCH_KEYS = ("observedEpoch", "receivedEpoch", "lastUpdatedEpoch", "dt")
+# Timestamp source priority. The browser stamps each rolling-history point's
+# ``timestamp`` with its RECEIVE/poll time (see src/state/store.js appendHistory,
+# which advances the timestamp every poll so the live chart animates even when the
+# provider's own observation time has not changed). The physical OBSERVATION time
+# is carried separately (observedEpoch/observedAt). Rate features are only physically
+# meaningful against observation time, so observation-time keys are resolved FIRST
+# and the receive/poll time is a last resort -- never silently treated as the
+# measurement time when a real observation time is present.
+_OBS_TIME_KEYS = ("observedAt",)                                # ISO observation time
+_OBS_EPOCH_KEYS = ("observedEpoch", "lastUpdatedEpoch", "dt")   # epoch-seconds observation time
+_RECV_TIME_KEYS = ("timestamp", "time", "receivedAt")           # ISO receive/poll time (fallback)
+_RECV_EPOCH_KEYS = ("receivedEpoch", "fetchedAtEpoch")          # epoch-seconds receive time (fallback)
 
 def _num(value: Any) -> float:
     """Coerce to float; None / non-numeric / non-finite -> NaN (never fabricated)."""
@@ -75,32 +99,73 @@ def _pick(point: Dict[str, Any], names: tuple) -> Any:
 def _row_timestamp(point: Dict[str, Any]):
     """Resolve a single observation's timestamp to a tz-naive (UTC) Timestamp.
 
-    Accepts an ISO string (preferred) or an epoch-seconds field. Returns ``NaT``
-    when nothing usable is present; such rows are dropped (they cannot be ordered).
+    Prefers the source OBSERVATION time (observedAt/observedEpoch/...) over the
+    browser RECEIVE/poll time (timestamp/receivedEpoch/...), trying an ISO string
+    then an epoch-seconds field within each group. Returns ``NaT`` when nothing
+    usable is present; such rows are dropped (they cannot be ordered) -- never
+    fabricated.
     """
-    ts = _pick(point, _TIMESTAMP_KEYS)
-    if ts is not None:
-        t = pd.to_datetime(ts, errors="coerce", utc=True)
-    else:
-        epoch = _pick(point, _EPOCH_KEYS)
-        if epoch is None:
-            return pd.NaT
-        t = pd.to_datetime(_num(epoch), unit="s", errors="coerce", utc=True)
-    return pd.NaT if pd.isna(t) else t.tz_convert(None)
+    for keys, is_epoch in ((_OBS_TIME_KEYS, False), (_OBS_EPOCH_KEYS, True),
+                           (_RECV_TIME_KEYS, False), (_RECV_EPOCH_KEYS, True)):
+        raw = _pick(point, keys)
+        if raw is None:
+            continue
+        t = (pd.to_datetime(_num(raw), unit="s", errors="coerce", utc=True) if is_epoch
+             else pd.to_datetime(raw, errors="coerce", utc=True))
+        if pd.notna(t):
+            return t.tz_convert(None)
+    return pd.NaT
+
+
+def _collapse_to_observations(df: pd.DataFrame, min_obs_interval_s: float) -> pd.DataFrame:
+    """Collapse repeat polls / sub-cadence jitter into DISTINCT observations.
+
+    ``df`` must already be sorted ascending by observation timestamp (ties in input
+    poll order). Walking backwards from the most recent observation, a row is kept
+    only when it is at least ``min_obs_interval_s`` before the last kept one; rows
+    closer than that -- repeat polls or cache jitter of the same underlying
+    observation -- are dropped, keeping the freshest. The latest observation is
+    ALWAYS kept, so a genuine change on the newest reading is never discarded.
+
+    This is pure *selection* of real rows: nothing is interpolated, averaged,
+    resampled onto a fixed grid, or invented. It exists so the pipeline's per-hour
+    rate features are computed over true observation-time gaps at (near) the trained
+    cadence instead of over the ~1-minute browser poll interval -- see
+    :data:`LIVE_MIN_OBS_INTERVAL_S`.
+    """
+    n = len(df)
+    if n <= 1 or not (min_obs_interval_s and min_obs_interval_s > 0):
+        return df
+    ts = df["timestamp"]
+    tol = pd.Timedelta(seconds=float(min_obs_interval_s))
+    keep = [n - 1]
+    anchor = ts.iloc[n - 1]
+    for i in range(n - 2, -1, -1):
+        if anchor - ts.iloc[i] >= tol:
+            keep.append(i)
+            anchor = ts.iloc[i]
+    keep.sort()
+    return df.iloc[keep].reset_index(drop=True)
 
 
 def normalize_live_history(history, station_id: Optional[str] = None,
                            latitude=None, longitude=None,
-                           history_rows: int = LIVE_HISTORY_ROWS, config=None) -> pd.DataFrame:
+                           history_rows: int = LIVE_HISTORY_ROWS, config=None,
+                           min_obs_interval_s: float = LIVE_MIN_OBS_INTERVAL_S) -> pd.DataFrame:
     """Convert a list of browser-normalized live observations into the canonical
     Sentinel schema (``STANDARD_COLUMNS``).
 
     Selection / renaming only: core sensor values are copied verbatim (a missing
     reading stays ``NaN``), never imputed or zero-filled -- so a genuine data gap
-    remains evidence for dropout/health. Rows without a resolvable timestamp are
-    dropped, the remainder sorted chronologically, and the last ``history_rows``
-    kept. A per-call ``station_id``/coords apply to every row (the browser history
-    points do not carry them).
+    remains evidence for dropout/health. Each row is timestamped by its true source
+    OBSERVATION time when available (falling back to the browser receive/poll time);
+    rows without a resolvable timestamp are dropped. The remainder is sorted
+    chronologically and then collapsed to DISTINCT observations spaced at least
+    ``min_obs_interval_s`` apart (repeat polls of the same observation are removed;
+    set to 0 to disable), and the last ``history_rows`` are kept. A per-call
+    ``station_id``/coords apply to every row (the browser history points do not
+    carry them). The returned frame's ``.attrs['n_raw_observations']`` records how
+    many valid-timestamp rows existed before collapsing.
     """
     config = config or DEFAULT_CONFIG
     sid = str(station_id) if station_id not in (None, "") else DEFAULT_LIVE_STATION
@@ -125,9 +190,17 @@ def normalize_live_history(history, station_id: Optional[str] = None,
     if df.empty:
         return df
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    df = df[df["timestamp"].notna()].sort_values("timestamp").reset_index(drop=True)
+    # stable sort by OBSERVATION time; ties keep input (poll) order so that when one
+    # observation time is polled repeatedly the freshest poll wins on collapse.
+    df = df[df["timestamp"].notna()].sort_values("timestamp", kind="stable").reset_index(drop=True)
+    n_raw = int(len(df))
+    # Collapse repeat polls / sub-cadence jitter to true distinct observations, so
+    # the pipeline's per-hour rates are computed over real observation-time gaps
+    # rather than the ~1-minute browser poll interval (never fabricates a reading).
+    df = _collapse_to_observations(df, min_obs_interval_s)
     if history_rows and len(df) > int(history_rows):
         df = df.iloc[-int(history_rows):].reset_index(drop=True)
+    df.attrs["n_raw_observations"] = n_raw
     return df
 
 
@@ -153,7 +226,8 @@ def baseline_source(station_id, baselines) -> str:
 
 def assess_live(history, station_id: Optional[str] = None, latitude=None, longitude=None,
                 engine: Optional[SentinelInference] = None,
-                history_rows: int = LIVE_HISTORY_ROWS) -> Dict[str, Any]:
+                history_rows: int = LIVE_HISTORY_ROWS,
+                min_obs_interval_s: float = LIVE_MIN_OBS_INTERVAL_S) -> Dict[str, Any]:
     """Assess the latest live observation for one station through Sentinel.
 
     Returns the pipeline's structured :meth:`SentinelInference.predict_observation`
@@ -161,22 +235,27 @@ def assess_live(history, station_id: Optional[str] = None, latitude=None, longit
       * ``confidence``      -- backward-compatible alias of ``fault_confidence``;
       * ``data_complete``   -- whether the latest reading could be scored;
       * ``baseline_source`` -- 'station_specific' vs 'global_fallback';
-      * ``n_history``       -- rows actually used.
+      * ``n_history``       -- DISTINCT observations actually scored (after collapsing
+                               repeat polls, see :func:`normalize_live_history`);
+      * ``n_history_raw``   -- raw poll rows received before collapsing (additive).
     Strictly JSON-safe. An empty/timestamp-less payload returns a safe degraded
     state rather than raising.
     """
     engine = engine or get_default_engine()
     sid = str(station_id) if station_id not in (None, "") else DEFAULT_LIVE_STATION
-    df = normalize_live_history(history, sid, latitude, longitude, history_rows, engine.config)
+    df = normalize_live_history(history, sid, latitude, longitude, history_rows,
+                                engine.config, min_obs_interval_s)
     if df.empty:
         return _degraded(sid, "no observations with a usable timestamp were provided")
 
+    n_raw = int(df.attrs.get("n_raw_observations", len(df)))
     result = engine.predict_observation(df, station_id=sid)
     # Enrichment only -- pipeline semantics (score/severity/fault_type) are untouched.
     result["confidence"] = result.get("fault_confidence")
     result["data_complete"] = result.get("anomaly_score") is not None
     result["baseline_source"] = baseline_source(sid, engine.baselines)
     result["n_history"] = int(len(df))
+    result["n_history_raw"] = n_raw
     return result
 
 
@@ -210,6 +289,7 @@ def _degraded(station_id: str, reason: str) -> Dict[str, Any]:
         "data_complete": False,
         "baseline_source": "global_fallback",
         "n_history": 0,
+        "n_history_raw": 0,
     }
 
 
