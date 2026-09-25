@@ -121,8 +121,27 @@ function updateTheme() {
   chart.update("none");
 }
 
-function getPointEpoch(p) {
-  // Use monotonic timestamp (polling time) for the x-axis to separate duplicate observations
+// x-axis epoch for a history point, honouring provenance:
+//   • live       → receivedEpoch: WHEN we received each successful poll, so every
+//                  10-minute poll is a distinct sample on the live timeline even
+//                  when OpenWeather's observation time (dt/observedEpoch) has not
+//                  advanced. This never fabricates a value — it only positions the
+//                  real reading we actually received.
+//   • historical → observedEpoch: the real provider observation time, so the
+//                  Open-Meteo backfill stays chronologically honest.
+// ML/Sentinel temporal features keep reading observedEpoch off the point itself
+// (see store.runMLInference); this function governs only the visualization axis.
+// Legacy points persisted before provenance tagging fall back to the stored
+// monotonic timestamp, then received/observed epoch — unchanged old behaviour.
+export function getPointEpoch(p) {
+  if (!p) return 0;
+  const cls = classifyHistoryPoint(p);
+  if (cls === "live" && Number.isFinite(p.receivedEpoch) && p.receivedEpoch > 0) {
+    return p.receivedEpoch;
+  }
+  if (cls === "historical" && Number.isFinite(p.observedEpoch) && p.observedEpoch > 0) {
+    return p.observedEpoch;
+  }
   if (p.timestamp) {
     const ms = new Date(p.timestamp).getTime();
     if (!isNaN(ms)) return Math.floor(ms / 1000);
@@ -213,6 +232,23 @@ export function collectAnomalyMarkers(anomalies, stationId, cutoff, nowEpoch) {
     .filter(a => Number.isFinite(a.observed))
     .map(a => ({ x: anomalyEpochOf(a), y: a.observed }))
     .filter(m => m.x >= cutoff && m.x <= nowEpoch);
+}
+
+// Honest metadata about the LIVE samples in view: how many repeat the previous
+// sample's provider observation time (dt/observedEpoch). OpenWeather's `dt` may
+// not advance on every 10-minute poll, so a repeated observation time is real,
+// expected, and worth surfacing — WITHOUT inventing a new weather value. Each
+// sample counted here is still a genuine successful response we received.
+export function providerObservationStatus(livePoints) {
+  const withObs = (livePoints || [])
+    .filter(p => Number.isFinite(p.observedEpoch))
+    .sort((a, b) => (a.receivedEpoch || 0) - (b.receivedEpoch || 0));
+  if (withObs.length < 2) {
+    return { samples: withObs.length, distinctObserved: withObs.length, repeated: 0, stale: false };
+  }
+  const distinctObserved = new Set(withObs.map(p => p.observedEpoch)).size;
+  const repeated = withObs.length - distinctObserved;
+  return { samples: withObs.length, distinctObserved, repeated, stale: repeated > 0 };
 }
 
 function renderChart(state) {
@@ -320,13 +356,20 @@ function renderChart(state) {
 
     // ---- Informative subtitle ----
     const histInWindow = points.filter(p => classifyHistoryPoint(p) === "historical").length;
-    const liveInWindow = points.length - histInWindow;
+    const livePtsInWindow = points.filter(p => classifyHistoryPoint(p) === "live");
+    const liveInWindow = livePtsInWindow.length;
     const cadence = liveInWindow === 0 && histInWindow > 0 ? "hourly " : "";
     const baselineChip = baseline.kind === "sentinel" ? "Sentinel baseline"
       : baseline.kind === "historical" ? "Historical baseline"
       : "baseline unavailable";
     let text = `${points.length} ${cadence}observation${points.length === 1 ? "" : "s"} · ${baselineChip}`;
     if (markers.length) text += ` · ${markers.length} Sentinel anomal${markers.length === 1 ? "y" : "ies"}`;
+    // Honest cadence note: flag when OpenWeather returned an unchanged observation
+    // time (dt) across successive 10-minute polls. No value is fabricated.
+    const obsStatus = providerObservationStatus(livePtsInWindow);
+    if (obsStatus.stale) {
+      text += ` · provider obs unchanged ×${obsStatus.repeated}`;
+    }
     if (subtitle) subtitle.textContent = text;
   }
 

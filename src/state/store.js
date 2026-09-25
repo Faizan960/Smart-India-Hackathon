@@ -10,7 +10,20 @@ const DEFAULT_STATION = "DL-001";
 
 // Development vs production polling
 const IS_DEV = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const LIVE_REFRESH_INTERVAL_MS = IS_DEV ? 5000 : 60000;
+
+// Live polling cadence. Production polls every 10 minutes; a short dev cadence
+// keeps local iteration fast. IMPORTANT: OpenWeather's observation time (`dt`)
+// may NOT advance on every poll — we still poll on this cadence and place each
+// successful response on the live chart by its receivedEpoch (see charts.js
+// getPointEpoch). Polling every 10 minutes does not claim a new physical
+// observation every 10 minutes. Kept as a pure resolver so the cadence is
+// unit-testable without browser globals.
+export const DEV_POLL_INTERVAL_MS = 5000;
+export const PROD_POLL_INTERVAL_MS = 10 * 60 * 1000; // exactly 10 minutes
+export function resolvePollIntervalMs(isDev) {
+  return isDev ? DEV_POLL_INTERVAL_MS : PROD_POLL_INTERVAL_MS;
+}
+const LIVE_REFRESH_INTERVAL_MS = resolvePollIntervalMs(IS_DEV);
 
 // Sentinel ML inference backend. Moved OFF the Vercel Python function onto a
 // dedicated FastAPI service (Render). The URL is configurable, never hard-coded:
@@ -126,7 +139,7 @@ export const store = {
     if (!last || point.receivedEpoch > last.receivedEpoch) {
       series.push(point);
       log("History", `observation accepted for ${station.id} (epoch=${receivedEpoch})`);
-      // Truncate to 1440 points (24 hours at 1 min intervals)
+      // Keep the most recent 1440 live points (~10 days at the 10-minute cadence).
       this.state.history[station.id] = series.slice(-1440);
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(this.state.history));

@@ -4,7 +4,8 @@
   "description": "AWS Sentinel monitoring dashboard",
   "scripts": {
     "start": "npx vercel dev --local --listen 3000",
-    "check": "echo Frontend uses native ES modules"
+    "check": "echo Frontend uses native ES modules",
+    "test:frontend": "node --test tests/frontend/live_pipeline.test.mjs"
   },
   "dependencies": {
     "dotenv": "^18.0.0"
