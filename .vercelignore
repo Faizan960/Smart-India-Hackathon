@@ -1,0 +1,27 @@
+# Vercel deploys ONLY the static dashboard (index.html, src/) and the Node
+# serverless API routes (api/*.js). Everything below powers the Render-hosted
+# Sentinel ML service and local ML tooling — it must NOT be uploaded to Vercel.
+#
+# Why this file exists:
+# When the Sentinel inference moved off Vercel to Render, api/inference.py was
+# removed but its Python footprint stayed at the repo root (.python-version, a
+# heavy requirements.txt, root *.py scripts, __pycache__). Vercel's zero-config
+# build inspects the root, saw those Python signals, and stopped naturally
+# emitting the Node functions under api/ — so /api/weather/current returned 404.
+# Excluding the Python/ML footprint lets zero-config expose api/weather/current.js
+# again. No ML code is modified; these files simply are not part of the Vercel build.
+
+# --- Python runtime / build-detection triggers at repo root ---
+.python-version
+requirements.txt
+*.py
+*.pyc
+__pycache__/
+
+# --- ML pipeline, Sentinel API service, model artifacts, tests, data ---
+# (used by Render + local ML only; not needed by the frontend or Node API)
+ml/
+sentinel_api/
+models/
+tests/
+data/
