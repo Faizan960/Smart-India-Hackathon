@@ -78,6 +78,24 @@ export function openAnomalyDrawer(anomaly) {
   if (anomaly.multivariateEvidence) evidenceLines.push(`Multivariate: ${anomaly.multivariateEvidence}`);
   if (anomaly.spatialEvidence) evidenceLines.push(`Spatial: ${anomaly.spatialEvidence}`);
   if (anomaly.likelyCause) evidenceLines.push(`Likely cause: ${anomaly.likelyCause}`);
+  // Richer AWS Sentinel evidence (only present on ML-sourced anomalies).
+  if (anomaly.source === "aws_sentinel") {
+    if (anomaly.fusedStatus) evidenceLines.push(`Fused status: ${anomaly.fusedStatus}`);
+    if (anomaly.explanation && anomaly.explanation.summary) {
+      evidenceLines.push(`Explanation: ${anomaly.explanation.summary}`);
+    }
+    if (anomaly.layaDecision && anomaly.layaDecision.decision) {
+      const conf = typeof anomaly.layaDecision.confidence === "number"
+        ? ` (confidence ${(anomaly.layaDecision.confidence * 100).toFixed(0)}%)` : "";
+      evidenceLines.push(`Laya decision: ${anomaly.layaDecision.decision}${conf} [${anomaly.layaDecision.source || "pipeline"}]`);
+    }
+    if (anomaly.baselineSource === "global_fallback") {
+      evidenceLines.push("Baseline: global climatology fallback — this live location has no station-specific historical (NOAA) baseline.");
+    }
+    if (anomaly.dataComplete === false) {
+      evidenceLines.push("⚠ Latest reading incomplete — no anomaly score computed (a core sensor value has not arrived).");
+    }
+  }
   if (anomaly.isSynthetic) evidenceLines.push("⚠ This anomaly was generated via demo fault injection.");
   reasonEl.textContent = evidenceLines.join("\n");
   reasonEl.style.whiteSpace = "pre-wrap";

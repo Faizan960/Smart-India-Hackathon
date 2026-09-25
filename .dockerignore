@@ -1,0 +1,37 @@
+# Docker build-context ignore for the Sentinel inference image
+# (build: `docker build -t aws-sentinel-api -f sentinel_api/Dockerfile .`).
+#
+# Keeps the context tiny and GUARANTEES no training data, reports, dev artifacts,
+# frontend, tests or caches are ever baked into the inference image. The Dockerfile
+# copies only ml/, models/sentinel/ and sentinel_api/.
+
+# --- training data & offline outputs (must never be in the image) ---
+data/
+reports/
+
+# --- dev / build caches & VCS ---
+.git/
+.gitignore
+.pytest_cache/
+**/__pycache__/
+*.pyc
+.claude/
+.vercel/
+.vercelignore
+
+# --- frontend & other backends (served by Vercel, not this container) ---
+src/
+public/
+index.html
+api/
+dev_server.js
+vercel.json
+package.json
+package-lock.json
+node_modules/
+
+# --- docs, tests, envs ---
+docs/
+tests/
+.env
+.env.*

@@ -1,0 +1,8 @@
+{
+  "rate_abs_threshold": {
+    "temperature": 10.399999999999999,
+    "humidity": 47.68694405240697,
+    "pressure": 2.3333333333333335
+  },
+  "rate_percentile": 99.9
+}

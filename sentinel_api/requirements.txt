@@ -1,0 +1,41 @@
+# AWS Sentinel FastAPI inference backend (Render Web Service) -- RUNTIME deps only.
+#
+# Versions are pinned to the SAME set the model artifacts in models/sentinel/ were
+# produced with (scikit-learn especially) so the pickled Isolation Forest + scaler
+# unpickle cleanly. This is the live inference path ONLY -- training, evaluation and
+# the pytest suite deps are intentionally NOT here.
+#
+# Proven required by the runtime import graph (api -> live_adapter -> inference ->
+# anomaly_detector/baseline/classifier/evidence/explainability/features/health/
+# laya_adapter):
+#   numpy, pandas, scikit-learn (pulls scipy transitively -- a hard dep of the
+#   IsolationForest), joblib (loads the .joblib artifacts).
+#
+# Deliberately EXCLUDED (NOT on the runtime import graph -- verified):
+#   pytest        -- test-only.
+#   pyarrow       -- Parquet I/O for the offline training/eval path only.
+#   PyYAML        -- only imported by data_mapping.py (training data loader), which
+#                    the inference path never imports.
+#   matplotlib / notebook libs -- never imported by the inference path.
+#
+# SHAP (evaluated separately, per instruction): explainability.py imports shap
+# LAZILY inside a try/except and degrades to a clearly-labelled standardized-
+# magnitude attribution if it is absent. It is therefore OPTIONAL, not required.
+# It is INCLUDED here on purpose: Render's container has no 250 MB serverless size
+# cap (the reason it was dropped from the Vercel function), so keeping it makes the
+# DEPLOYED explanation identical to the validated local behaviour (explanation
+# .method == "shap"). Remove the shap line to ship a lean image; the endpoint still
+# works and explanation.method falls back to the labelled attribution.
+
+# --- web server ---
+fastapi==0.115.6
+uvicorn==0.34.0
+
+# --- Sentinel inference core (required) ---
+numpy==2.3.5
+pandas==2.3.3
+scikit-learn==1.7.2
+joblib==1.5.2
+
+# --- explainability (optional; included so deployed == validated local SHAP) ---
+shap==0.52.0

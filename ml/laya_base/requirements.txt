@@ -1,0 +1,11 @@
+# Optional dependencies for the isolated Laya prototype.
+# Do not merge into root requirements.txt until validated.
+laya>=0.3.6
+torch>=2.0.0
+transformers>=4.48.0
+safetensors>=0.4.0
+huggingface_hub>=0.20.0
+datasets>=3.0.0
+accelerate>=1.0.0
+pyarrow>=10.0.0
+scipy>=1.10.0
