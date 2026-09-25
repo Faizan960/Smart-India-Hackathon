@@ -24,4 +24,4 @@ ml/
 sentinel_api/
 models/
 tests/
-data/
+/data/
