@@ -300,6 +300,13 @@ This provides a reproducible healthy baseline for the current prototype.
 
 ## 8. Real-Time Inference
 
+> **On branch `feature/live-weather-demo`:** `/api/inference` is bridged to the
+> real-data **AWS Sentinel** pipeline (`ml/pipeline`) through the thin adapter
+> `ml/pipeline/live_adapter.py`; the legacy `ml/inference.py` path below is left
+> intact but is no longer what this endpoint calls. The HTTP contract is
+> preserved (see [§22](#22-live-weather--sentinel-inference-integration)). The
+> description in this section reflects the original prototype design.
+
 The inference endpoint is:
 
 ~~~text
@@ -1555,6 +1562,58 @@ python sentinel_api/smoke_test.py https://smart-india-hackathon-pcfm.onrender.co
 - Production alerting workflows
 
 
+
+## 22. Live Weather → Sentinel Inference Integration
+
+On `feature/live-weather-demo`, the existing live OpenWeatherMap pipeline is
+connected to the real-data **AWS Sentinel / Laya** ML pipeline (authoritatively
+documented in [`docs/ML_PIPELINE.md`](docs/ML_PIPELINE.md)). This is an
+*integration* — the model is **not** retrained on live data, and no second
+detector or weather API is introduced.
+
+### Data flow
+
+~~~text
+OpenWeatherMap (live) -> /api/weather/current -> browser normalizer
+   -> rolling per-station history (localStorage)
+   -> POST /api/inference { history, station_id, latitude, longitude }
+   -> ml/pipeline/live_adapter.assess_live()
+   -> SentinelInference: features -> Isolation Forest -> fault typing
+        -> evidence fusion -> SHAP -> health -> Laya decision + verification
+   -> strict JSON (allow_nan=False) -> existing dashboard
+~~~
+
+### Data-source roles (kept distinct)
+
+| Role | Source |
+|---|---|
+| Model **training** (historical) | NOAA ISD — **not** IMD data |
+| **Live inference** input | OpenWeatherMap (dev live provider) |
+| Historical **dev** telemetry | Open-Meteo |
+| ML detection / typing / explanation | real-data Sentinel pipeline (`ml/pipeline`) |
+| Decision layer | Laya (`ml/laya_base`) |
+
+### Honesty boundaries
+
+- Live station ids (`DL-001`, …) are **development locations**, not IMD AWS
+  station ids. Locations unknown to training use a global-climatology baseline,
+  reported as `baseline_source: "global_fallback"`.
+- A missing live sensor value is **never fabricated**: the reading is scored
+  `anomaly_score: null` and surfaced as at most a hedged `SENSOR_DROPOUT`.
+- The NOAA held-out evaluation metrics are **not** a measured OpenWeatherMap
+  accuracy, and **no IMD production integration** is claimed.
+- On this branch, SHAP explanations and real-data training (listed as future
+  work in §21) are **implemented** in `ml/pipeline`.
+
+### Serverless artifacts
+
+`api/inference.py` loads `models/sentinel/**` (bundled via `vercel.json`
+`includeFiles`); runtime deps are pinned in `api/requirements.txt`
+(numpy / pandas / scikit-learn / joblib — SHAP optional, with a graceful
+fallback). Integration tests: `tests/ml/test_live_adapter.py`
+(`python -m pytest tests/ml -q`).
+
+---
 
 ## License
 

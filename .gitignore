@@ -14,3 +14,16 @@ node_modules/
 src/config.local.js
 
 .vercel
+
+# AWS Sentinel ML pipeline — data & trained artifacts (not version-controlled)
+data/Raw/
+data/processed/
+data/injected/
+*.joblib
+
+# Exception: the serverless inference function (api/inference.py) loads these two
+# Sentinel artifacts at runtime, so they MUST be tracked for Vercel deployment.
+# (The larger training-only artifacts stay ignored by the *.joblib rule above.)
+!models/sentinel/isolation_forest.joblib
+!models/sentinel/scaler.joblib
+

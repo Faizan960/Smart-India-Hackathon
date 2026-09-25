@@ -1,0 +1,60 @@
+# NOAA ISD (Integrated Surface Database) -> AWS Sentinel standard-schema mapping.
+#
+# Spec sections 2 & 3: this file is the configurable data mapping layer. Change
+# these mappings to ingest a different provider WITHOUT modifying any ML code.
+#
+# IMPORTANT: this is NOAA ISD data for Indian surface stations. It is NOT IMD
+# data and must never be represented as native IMD AWS observations.
+
+dataset:
+  name: "NOAA ISD hourly surface observations (Indian stations)"
+  source: "NOAA Integrated Surface Database (ISD)"
+  note: "Real surface-station observations. NOT IMD data; not labelled as IMD."
+  format: csv
+
+# Direct passthrough columns (copied as-is, numeric coercion done in the loader).
+direct:
+  station_id: STATION
+  station_name: NAME
+  latitude: LATITUDE
+  longitude: LONGITUDE
+  elevation: ELEVATION
+  timestamp: DATE
+  report_type: REPORT_TYPE
+
+# NOAA composite fields look like "value,quality,...". Extract one comma-part,
+# divide by `scale`, and treat any listed integer as a missing sentinel.
+composite:
+  temperature:            # air temperature, degrees C
+    column: TMP
+    part: 0
+    scale: 10.0
+    missing: [9999, 99999, -9999]
+  dew_point:              # dew point, degrees C (used to derive humidity)
+    column: DEW
+    part: 0
+    scale: 10.0
+    missing: [9999, 99999, -9999]
+  pressure:               # sea-level pressure, hPa (present across stations)
+    column: SLP
+    part: 0
+    scale: 10.0
+    missing: [99999, 9999]
+  wind_speed:             # metres/second
+    column: WND
+    part: 3
+    scale: 10.0
+    missing: [9999]
+
+# How to obtain relative humidity. `from_dew_point` uses the Magnus formula on
+# temperature + dew_point (ml/pipeline/physics.py). Set `direct_column` instead
+# if a provider reports RH directly.
+humidity:
+  method: from_dew_point
+  direct_column: null
+
+quality_control:
+  # null = accept all report types; or restrict e.g. ["FM-12", "FM-15"].
+  accept_report_types: null
+  # Drop a station from training if it has fewer than this many usable rows.
+  min_rows_per_station: 500

@@ -1,0 +1,41 @@
+{
+  "trained_utc": "2026-09-23T14:05:25.339140+00:00",
+  "n_train_complete_rows": 87917,
+  "n_train_rows_total": 151698,
+  "features": [
+    "temperature",
+    "humidity",
+    "pressure",
+    "temp_dev_baseline",
+    "humidity_dev_baseline",
+    "pressure_dev_baseline",
+    "temp_rate",
+    "humidity_rate",
+    "pressure_rate",
+    "temp_roll_std_3h",
+    "pressure_roll_std_3h",
+    "vpd",
+    "thermo_inconsistency_score",
+    "pressure_change_3h"
+  ],
+  "isolation_forest": {
+    "n_estimators": 200,
+    "contamination": "auto",
+    "max_samples": "auto",
+    "random_state": 42
+  },
+  "calibration": {
+    "method": "logistic_on_training_raw",
+    "center": 0.013974695528088428,
+    "scale": 0.036336258954885244,
+    "center_pct": 95.0,
+    "upper_pct": 99.7
+  },
+  "train_raw_score_percentiles": {
+    "50": -0.07791833110031121,
+    "90": -0.008111672050546342,
+    "95": 0.013974695528088428,
+    "99": 0.056566933683994534,
+    "99.7": 0.08664721343785892
+  }
+}
