@@ -91,7 +91,7 @@ export const STATIONS = [
   {
     id: "KL-007",
     name: "Wayanad",
-    locationQuery: "Wayanad",
+    locationQuery: "Kalpetta",
     region: "Kerala",
     latitude: 11.6854,
     longitude: 76.1320
