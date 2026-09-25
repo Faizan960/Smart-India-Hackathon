@@ -106,6 +106,7 @@ export const store = {
 
     const point = {
       timestamp: monotonicTimestamp,
+      source: "live",            // provenance: /api/weather/current polling
       observedEpoch: station.observedEpoch,
       receivedEpoch: receivedEpoch,
       observedAt: station.observedAt,
@@ -456,6 +457,7 @@ export const store = {
         const normalized = payload.data.list.map(item => {
           return {
             id: station.id,
+            source: "historical",   // provenance: /api/weather/history backfill
             timestamp: new Date(item.dt * 1000).toISOString(),
             observedEpoch: item.dt,
             receivedEpoch: item.dt, // for historical, received is observed
