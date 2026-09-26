@@ -26,8 +26,11 @@ module.exports = async function handler(req, res) {
     const startDate = new Date(Number(start) * 1000).toISOString().split("T")[0];
     const endDate = new Date(Number(end) * 1000).toISOString().split("T")[0];
 
-    // Use Open-Meteo Archive API (free, no API key required, real historical data)
-    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${startDate}&end_date=${endDate}&hourly=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m&timezone=auto`;
+    // Use Open-Meteo Archive API (free, no API key required, real historical data).
+    // timezone=UTC so the returned hour strings are UTC, not the location's local
+    // time — otherwise they get read as UTC and every point is shifted by the
+    // location's offset (e.g. IST +5:30), pushing recent hours into the future.
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${startDate}&end_date=${endDate}&hourly=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m&timezone=UTC`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
@@ -65,8 +68,10 @@ module.exports = async function handler(req, res) {
 
     const list = [];
     for (let i = 0; i < times.length; i++) {
-      // Open-Meteo returns ISO strings like "2026-08-21T00:00"
-      const dt = Math.floor(new Date(times[i]).getTime() / 1000);
+      // Open-Meteo (timezone=UTC) returns naive strings like "2026-08-21T00:00"
+      // with no offset; append "Z" so they parse as UTC on any runtime instead of
+      // the server's local zone.
+      const dt = Math.floor(new Date(times[i] + "Z").getTime() / 1000);
       if (isNaN(dt)) continue;
       // Skip entries where temperature is null (Open-Meteo returns null for future hours)
       if (temps[i] === null || temps[i] === undefined) continue;
