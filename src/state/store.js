@@ -5,7 +5,13 @@ import { STATIONS } from "../data/stations.js";
 import { getDemoData } from "../data/demoData.js";
 
 const CACHE_KEY = "aws-live-cache-v1";
-const HISTORY_KEY = "aws-history-v1";
+// v2: pre-v2 persisted history held Open-Meteo points stored under a +5:30
+// timezone bug, whose epochs the merge dedup (by receivedEpoch) could never
+// replace — so old shifted points and corrected points coexisted, splitting the
+// chart into disconnected clusters. Bumping this key (and the per-station cache
+// prefix in loadHistoricalData) abandons the contaminated data so the corrected
+// series repopulates cleanly. app.js removes the old keys on boot.
+const HISTORY_KEY = "aws-history-v2";
 const DEFAULT_STATION = "DL-001";
 
 // Development vs production polling
@@ -430,7 +436,7 @@ export const store = {
 
   async loadHistoricalData(station) {
     if (!station || !station.id) return;
-    const historyCacheKey = `weather-history-${station.id}`;
+    const historyCacheKey = `weather-history-v2-${station.id}`;
     
     // Check cache
     try {

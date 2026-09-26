@@ -133,7 +133,7 @@ function renderLiveMonitor(state) {
     `─────────────────────────`,
     `Stored observations:  ${totalStored} across ${storedKeys.length} stations`,
     `Collection span:      ${totalStored > 0 ? durationStr : 'N/A'}`,
-    `History persistence:  ${localStorage.getItem("aws-history-v1") ? 'Present (V1)' : 'Missing'}`,
+    `History persistence:  ${localStorage.getItem("aws-history-v2") ? 'Present (V2)' : 'Missing'}`,
     `Anomalies detected:   ${state.anomalies.length}`
   ].join("\n");
 }

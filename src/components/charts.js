@@ -147,9 +147,10 @@ function renderChart(state) {
   const rangeSeconds = window.currentChartRange || 24 * 60 * 60;
   const cutoff = nowEpoch - rangeSeconds;
 
-  // Filter by time range, sort ascending
+  // Filter to the visible window [cutoff, now], sort ascending. Exclude any
+  // future-dated points so the line never shoots past "now" to a stray point.
   const points = allPoints
-    .filter(p => getPointEpoch(p) >= cutoff)
+    .filter(p => { const e = getPointEpoch(p); return e >= cutoff && e <= nowEpoch; })
     .sort((a, b) => getPointEpoch(a) - getPointEpoch(b));
 
   const subtitle = document.getElementById("chartSubtitle");
@@ -200,14 +201,25 @@ function renderChart(state) {
     chart.data.datasets[1].data = [{ x: epoch, y: points[0].temperature }];
   } else {
     if (subtitle) subtitle.textContent = `${points.length} observations — ${rangeLabel}`;
-    
-    const chartData = points.map(p => ({
-      x: getPointEpoch(p),
-      y: p.temperature
-    }));
-    chart.data.datasets[0].data = chartData;
 
-    // Calculate baseline (mean of all points in window)
+    // Build the observed series, breaking the line across large time gaps so a
+    // sparse or isolated reading is never joined to the rest by one long,
+    // misleading straight segment. Real points still render as dots (pointRadius).
+    const gapLimit = rangeSeconds / 12; // ~2h on the 24h view, scales with range
+    const chartData = [];
+    let prevX = null;
+    for (const p of points) {
+      const x = getPointEpoch(p);
+      if (prevX !== null && x - prevX > gapLimit) {
+        chartData.push({ x: prevX + 1, y: null }); // gap → break the line here
+      }
+      chartData.push({ x, y: p.temperature });
+      prevX = x;
+    }
+    chart.data.datasets[0].data = chartData;
+    chart.data.datasets[0].spanGaps = false;
+
+    // Calculate baseline (mean of all real points in window)
     const values = points.map(p => p.temperature).filter(Number.isFinite);
     if (values.length >= 6) {
       const baseline = values.reduce((a,b) => a+b, 0) / values.length;
