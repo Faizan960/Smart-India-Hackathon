@@ -66,6 +66,7 @@ module.exports = async function handler(req, res) {
     const pressures = hourly.surface_pressure || [];
     const winds = hourly.wind_speed_10m || [];
 
+    const nowEpoch = Math.floor(Date.now() / 1000);
     const list = [];
     for (let i = 0; i < times.length; i++) {
       // Open-Meteo (timezone=UTC) returns naive strings like "2026-08-21T00:00"
@@ -73,7 +74,10 @@ module.exports = async function handler(req, res) {
       // the server's local zone.
       const dt = Math.floor(new Date(times[i] + "Z").getTime() / 1000);
       if (isNaN(dt)) continue;
-      // Skip entries where temperature is null (Open-Meteo returns null for future hours)
+      // Open-Meteo fills the current day with forecast values for hours that have
+      // not occurred yet; those are predictions, not observations — drop them.
+      if (dt > nowEpoch) continue;
+      // Skip entries where temperature is null (Open-Meteo returns null for gaps).
       if (temps[i] === null || temps[i] === undefined) continue;
       list.push({
         dt,
