@@ -1,0 +1,204 @@
+{
+  "seed": 42,
+  "n_test_rows": 39004,
+  "n_injected_rows": 3994,
+  "n_events": 190,
+  "detection_row_level": {
+    "precision": 0.5287,
+    "recall": 0.4427,
+    "f1": 0.4819,
+    "tp": 1768,
+    "fp": 1576,
+    "fn": 2226
+  },
+  "detection_event_level": {
+    "n_events": 182,
+    "detected": 167,
+    "recall": 0.9176
+  },
+  "per_fault": {
+    "SENSOR_DROPOUT": {
+      "injected_rows": 353,
+      "detected_rows": 353,
+      "row_recall": 1.0,
+      "typing_accuracy_of_detected": 1.0,
+      "detected_as": {
+        "SENSOR_DROPOUT": 353
+      }
+    },
+    "SENSOR_FREEZE": {
+      "injected_rows": 367,
+      "detected_rows": 198,
+      "row_recall": 0.5395,
+      "typing_accuracy_of_detected": 0.9646,
+      "detected_as": {
+        "SENSOR_FREEZE": 191,
+        "SENSOR_DROPOUT": 6,
+        "CALIBRATION_DRIFT": 1
+      }
+    },
+    "TRANSIENT_SPIKE": {
+      "injected_rows": 36,
+      "detected_rows": 29,
+      "row_recall": 0.8056,
+      "typing_accuracy_of_detected": 0.7241,
+      "detected_as": {
+        "TRANSIENT_SPIKE": 21,
+        "SENSOR_DROPOUT": 4,
+        "CALIBRATION_DRIFT": 2,
+        "SENSOR_FREEZE": 1,
+        "MULTIVARIATE_ANOMALY": 1
+      }
+    },
+    "CALIBRATION_DRIFT": {
+      "injected_rows": 3004,
+      "detected_rows": 1019,
+      "row_recall": 0.3392,
+      "typing_accuracy_of_detected": 0.3768,
+      "detected_as": {
+        "SENSOR_FREEZE": 529,
+        "CALIBRATION_DRIFT": 384,
+        "SENSOR_DROPOUT": 89,
+        "MULTIVARIATE_ANOMALY": 16,
+        "TRANSIENT_SPIKE": 1
+      }
+    },
+    "PHYSICAL_INCONSISTENCY": {
+      "injected_rows": 97,
+      "detected_rows": 97,
+      "row_recall": 1.0,
+      "typing_accuracy_of_detected": 0.9691,
+      "detected_as": {
+        "PHYSICAL_INCONSISTENCY": 94,
+        "SENSOR_DROPOUT": 3
+      }
+    },
+    "MULTIVARIATE_ANOMALY": {
+      "injected_rows": 137,
+      "detected_rows": 72,
+      "row_recall": 0.5255,
+      "typing_accuracy_of_detected": 0.7778,
+      "detected_as": {
+        "MULTIVARIATE_ANOMALY": 56,
+        "SENSOR_FREEZE": 14,
+        "SENSOR_DROPOUT": 2
+      }
+    }
+  },
+  "confusion_matrix": {
+    "CALIBRATION_DRIFT": {
+      "CALIBRATION_DRIFT": 384,
+      "MULTIVARIATE_ANOMALY": 16,
+      "NORMAL": 1985,
+      "PHYSICAL_INCONSISTENCY": 0,
+      "SENSOR_DROPOUT": 89,
+      "SENSOR_FREEZE": 529,
+      "TRANSIENT_SPIKE": 1
+    },
+    "MULTIVARIATE_ANOMALY": {
+      "CALIBRATION_DRIFT": 0,
+      "MULTIVARIATE_ANOMALY": 56,
+      "NORMAL": 65,
+      "PHYSICAL_INCONSISTENCY": 0,
+      "SENSOR_DROPOUT": 2,
+      "SENSOR_FREEZE": 14,
+      "TRANSIENT_SPIKE": 0
+    },
+    "NORMAL": {
+      "CALIBRATION_DRIFT": 634,
+      "MULTIVARIATE_ANOMALY": 67,
+      "NORMAL": 33434,
+      "PHYSICAL_INCONSISTENCY": 0,
+      "SENSOR_DROPOUT": 833,
+      "SENSOR_FREEZE": 42,
+      "TRANSIENT_SPIKE": 0
+    },
+    "PHYSICAL_INCONSISTENCY": {
+      "CALIBRATION_DRIFT": 0,
+      "MULTIVARIATE_ANOMALY": 0,
+      "NORMAL": 0,
+      "PHYSICAL_INCONSISTENCY": 94,
+      "SENSOR_DROPOUT": 3,
+      "SENSOR_FREEZE": 0,
+      "TRANSIENT_SPIKE": 0
+    },
+    "SENSOR_DROPOUT": {
+      "CALIBRATION_DRIFT": 0,
+      "MULTIVARIATE_ANOMALY": 0,
+      "NORMAL": 0,
+      "PHYSICAL_INCONSISTENCY": 0,
+      "SENSOR_DROPOUT": 353,
+      "SENSOR_FREEZE": 0,
+      "TRANSIENT_SPIKE": 0
+    },
+    "SENSOR_FREEZE": {
+      "CALIBRATION_DRIFT": 1,
+      "MULTIVARIATE_ANOMALY": 0,
+      "NORMAL": 169,
+      "PHYSICAL_INCONSISTENCY": 0,
+      "SENSOR_DROPOUT": 6,
+      "SENSOR_FREEZE": 191,
+      "TRANSIENT_SPIKE": 0
+    },
+    "TRANSIENT_SPIKE": {
+      "CALIBRATION_DRIFT": 2,
+      "MULTIVARIATE_ANOMALY": 1,
+      "NORMAL": 7,
+      "PHYSICAL_INCONSISTENCY": 0,
+      "SENSOR_DROPOUT": 4,
+      "SENSOR_FREEZE": 1,
+      "TRANSIENT_SPIKE": 21
+    }
+  },
+  "latency": {
+    "SENSOR_DROPOUT": {
+      "detected_events": 30,
+      "median_latency_samples": 0.0,
+      "median_latency_hours": 0.0,
+      "mean_latency_hours": 0.0
+    },
+    "SENSOR_FREEZE": {
+      "detected_events": 19,
+      "median_latency_samples": 2.0,
+      "median_latency_hours": 6.0,
+      "mean_latency_hours": 5.5
+    },
+    "TRANSIENT_SPIKE": {
+      "detected_events": 29,
+      "median_latency_samples": 0.0,
+      "median_latency_hours": 0.0,
+      "mean_latency_hours": 0.0
+    },
+    "CALIBRATION_DRIFT": {
+      "detected_events": 30,
+      "median_latency_samples": 8.0,
+      "median_latency_hours": 15.5,
+      "mean_latency_hours": 25.8
+    },
+    "PHYSICAL_INCONSISTENCY": {
+      "detected_events": 29,
+      "median_latency_samples": 0.0,
+      "median_latency_hours": 0.0,
+      "mean_latency_hours": 0.0
+    },
+    "MULTIVARIATE_ANOMALY": {
+      "detected_events": 30,
+      "median_latency_samples": 0.0,
+      "median_latency_hours": 0.0,
+      "mean_latency_hours": 0.317
+    }
+  },
+  "false_positive_upper_bound": {
+    "non_injected_rows": 35010,
+    "flagged": 1576,
+    "rate_upper_bound": 0.045
+  },
+  "injected_event_counts": {
+    "TRANSIENT_SPIKE": 40,
+    "SENSOR_DROPOUT": 30,
+    "SENSOR_FREEZE": 30,
+    "CALIBRATION_DRIFT": 30,
+    "PHYSICAL_INCONSISTENCY": 30,
+    "MULTIVARIATE_ANOMALY": 30
+  }
+}
