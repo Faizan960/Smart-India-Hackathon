@@ -48,3 +48,38 @@ docker run --rm -p 8000:8000 -e FRONTEND_ORIGIN="https://<your-app>.vercel.app" 
 5. Env var `FRONTEND_ORIGIN=https://<your-app>.vercel.app`.
 6. Deploy, then set `VITE_SENTINEL_API_URL=https://<service>.onrender.com` on the
    Vercel project so the frontend calls this service.
+
+## Keep-alive / uptime monitoring (demo)
+
+Render Free-Tier Web Services spin down after a period of inactivity and take a
+few seconds to cold-start on the next request. For a live demo you can *reduce*
+the chance of a cold start by having an **external uptime monitor** poll the
+liveness endpoint on a fixed interval:
+
+```
+External uptime monitor  --(GET every ~1 min)-->  https://<service>.onrender.com/health
+```
+
+- Point an external monitor at `GET https://<service>.onrender.com/health` and
+  expect `200`. For this SIH demo the desired interval is **~1 minute** to keep
+  idle spin-down low.
+- Interval caveat: **UptimeRobot's free tier has a 5-minute minimum**, so it does
+  **not** deliver the desired ~1-minute pings. If you specifically want ~1-minute
+  checks, use a monitor/service that supports sub-5-minute intervals — e.g. a
+  self-hosted cron (`* * * * *`), or an uptime service such as BetterStack or
+  Cronitor on a plan that allows ~1-minute checks. (GitHub Actions `schedule` is
+  also ~5-minute-minimum and best-effort, so it is not reliable for 1-minute pings.)
+- `GET /health` is deliberately cheap: **no auth, no ML inference, no weather-API
+  call, no database**. It returns `200` with
+  `{"status": ..., "model_loaded": <bool>, "service": "aws-sentinel-inference"}`
+  as long as the process is up (the model reference is cached at startup, so the
+  check does not reload anything).
+- Do **not** rely on the dashboard/browser to keep the service awake: a browser
+  `setInterval` stops when the tab is closed or throttled in the background, so it
+  is not a dependable keep-alive. The dashboard is not responsible for uptime.
+
+> **Limitation:** this only *reduces* idle spin-down for a demo/development
+> setup — it does **not** guarantee the service never sleeps. Render's free tier
+> enforces its own limits (e.g. monthly running-hours caps) and may change its
+> policies; pinging is subject to those current policies. For a guaranteed
+> always-on service, use a paid Render instance.
