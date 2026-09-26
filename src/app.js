@@ -144,9 +144,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await initUI();
 
+  // One-time migration: drop pre-v2 persisted history and per-station caches.
+  // Older builds stored Open-Meteo points under a +5:30 timezone bug whose epochs
+  // the merge dedup could never replace, contaminating the chart. Removing them
+  // also reclaims localStorage before the fresh corrected data is written, so the
+  // ~5MB quota isn't exhausted by dead per-station caches.
+  try {
+    localStorage.removeItem("aws-history-v1");
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("weather-history-") && !k.startsWith("weather-history-v2-")) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch {}
+
   // Load persisted history into memory
   try {
-    const saved = localStorage.getItem("aws-history-v1");
+    const saved = localStorage.getItem("aws-history-v2");
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === "object") {
